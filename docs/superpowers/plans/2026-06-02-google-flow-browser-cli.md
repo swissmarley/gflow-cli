@@ -83,7 +83,7 @@ Create `package.json`:
     "eslint": "^9.4.0",
     "tsx": "^4.15.1",
     "typescript": "^5.4.5",
-    "typescript-eslint": "^7.12.0",
+    "typescript-eslint": "^8.60.1",
     "vitest": "^1.6.0"
   }
 }
@@ -140,6 +140,7 @@ Create `.gitignore`:
 
 ```gitignore
 node_modules/
+.npm-cache/
 dist/
 coverage/
 .gflow/

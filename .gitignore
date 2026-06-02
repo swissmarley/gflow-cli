@@ -1,0 +1,8 @@
+node_modules/
+.npm-cache/
+dist/
+coverage/
+.gflow/
+gflow-output/
+*.log
+.DS_Store
