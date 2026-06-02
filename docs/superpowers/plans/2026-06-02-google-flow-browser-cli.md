@@ -56,7 +56,7 @@ Create `package.json`:
   "description": "Local browser automation CLI for Google Flow.",
   "type": "module",
   "bin": {
-    "gflow": "./dist/index.js"
+    "gflow": "./dist/src/index.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
