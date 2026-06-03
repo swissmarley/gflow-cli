@@ -18,8 +18,17 @@ export interface BrowserSession {
   close(): Promise<void>;
 }
 
-export function messageForBrowserLaunchError(error: unknown, browser: BrowserChannel): string | undefined {
+export function messageForBrowserLaunchError(error: unknown, browser: BrowserChannel, profileDir?: string): string | undefined {
   if (!(error instanceof Error)) return undefined;
+
+  if (error.message.includes("ProcessSingleton") || error.message.includes("SingletonLock")) {
+    return [
+      `The gflow Chrome profile is already open${profileDir ? `: ${profileDir}` : "."}`,
+      "Please quit the Chrome instance opened by `gflow auth login`, then run `gflow doctor` again.",
+      "If you need to keep that window open, use a different profile name with both commands, for example `gflow auth login --profile clean` and `gflow doctor --profile clean`."
+    ].join(" ");
+  }
+
   if (browser !== "chrome" || !error.message.includes("Chromium distribution 'chrome' is not found")) return undefined;
 
   return [
@@ -40,10 +49,11 @@ export function buildBrowserLaunchOptions(options: BrowserSessionOptions): Brows
 
 export async function openBrowserSession(options: BrowserSessionOptions): Promise<BrowserSession> {
   let context: BrowserContext;
+  const profileDir = resolveProfileDir(options.profile);
   try {
-    context = await chromium.launchPersistentContext(resolveProfileDir(options.profile), buildBrowserLaunchOptions(options));
+    context = await chromium.launchPersistentContext(profileDir, buildBrowserLaunchOptions(options));
   } catch (error) {
-    throw new Error(messageForBrowserLaunchError(error, options.browser) ?? (error instanceof Error ? error.message : String(error)));
+    throw new Error(messageForBrowserLaunchError(error, options.browser, profileDir) ?? (error instanceof Error ? error.message : String(error)));
   }
   const page = context.pages()[0] ?? (await context.newPage());
 

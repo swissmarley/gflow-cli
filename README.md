@@ -54,6 +54,8 @@ npm run dev -- doctor
 
 Use the same browser channel for `doctor`, `image`, `video`, and `batch` that you used for login. The default is `chrome`.
 
+If `doctor` reports `ProcessSingleton` or `SingletonLock`, the same gflow Chrome profile is still open. Quit the Chrome instance opened by `auth login`, then run `doctor` again. On macOS, focus that gflow Chrome window and press `Cmd+Q`.
+
 ## Image
 
 ```bash

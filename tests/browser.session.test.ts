@@ -33,6 +33,23 @@ describe("messageForBrowserLaunchError", () => {
     expect(message).toContain("--browser chromium");
   });
 
+  it("explains that an already-open gflow Chrome profile must be quit", () => {
+    const message = messageForBrowserLaunchError(
+      new Error(
+        [
+          "browserType.launchPersistentContext: Failed to create a ProcessSingleton for your profile directory.",
+          "Failed to create /project/.gflow/profiles/default/SingletonLock: File exists (17)"
+        ].join("\n")
+      ),
+      "chrome",
+      "/project/.gflow/profiles/default"
+    );
+
+    expect(message).toContain("gflow Chrome profile is already open");
+    expect(message).toContain("quit the Chrome instance opened by `gflow auth login`");
+    expect(message).toContain("/project/.gflow/profiles/default");
+  });
+
   it("does not rewrite unrelated browser errors", () => {
     expect(messageForBrowserLaunchError(new Error("Other failure"), "chrome")).toBeUndefined();
     expect(messageForBrowserLaunchError(new Error("Chromium distribution 'chrome' is not found"), "chromium")).toBeUndefined();
