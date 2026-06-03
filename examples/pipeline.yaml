@@ -1,0 +1,17 @@
+jobs:
+  - id: concept-image
+    type: image
+    project: Summer Campaign
+    prompt: "Minimal editorial product still on a warm studio background"
+    model: nano-banana-pro
+    ratio: "1:1"
+    outputs: 1
+
+  - id: hero-video
+    type: video
+    project: Summer Campaign
+    prompt: "A cinematic product reveal on a sunlit table, slow dolly in"
+    model: veo-3.1-fast
+    duration: 8
+    ratio: "16:9"
+    outputs: 1
