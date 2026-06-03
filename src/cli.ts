@@ -71,7 +71,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .option("--timeout <seconds>", "generation timeout in seconds", parseIntegerOption)
     .option("--out <path>", "output directory", "./gflow-output")
     .option("--profile <name>", "browser profile name", "default")
-    .option("--headed", "show browser")
+    .option("--headed", "show browser", true)
     .option("--no-headed", "run browser headless")
     .action(async (command) => {
       const job = parseImageJob({
@@ -106,7 +106,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .option("--timeout <seconds>", "generation timeout in seconds", parseIntegerOption)
     .option("--out <path>", "output directory", "./gflow-output")
     .option("--profile <name>", "browser profile name", "default")
-    .option("--headed", "show browser")
+    .option("--headed", "show browser", true)
     .option("--no-headed", "run browser headless")
     .action(async (command) => {
       const job = parseVideoJob({
@@ -135,7 +135,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .argument("<file>", "YAML pipeline file")
     .option("--out <path>", "output directory", "./gflow-output")
     .option("--profile <name>", "browser profile name", "default")
-    .option("--headed", "show browser")
+    .option("--headed", "show browser", true)
     .option("--no-headed", "run browser headless")
     .option("--continue-on-failure", "continue after ordinary generation failures", false)
     .action(async (file, command) => {

@@ -82,4 +82,22 @@ describe("CLI", () => {
     expect(login).toBeDefined();
     expect(login?.options.map((option) => option.long)).toContain("--profile");
   });
+
+  it("runs headed by default and supports no-headed", async () => {
+    const automation: FlowAutomation = {
+      runJob: vi.fn(async () => ({
+        jobId: "headed-image",
+        artifacts: [],
+        flowUrl: "https://labs.google/fx/tools/flow"
+      }))
+    };
+    const program = createProgram({ automation });
+    const image = program.commands.find((command) => command.name() === "image");
+
+    await program.parseAsync(["node", "gflow", "image", "--id", "headed-image", "--prompt", "Prompt"]);
+    expect(image?.opts().headed).toBe(true);
+
+    await program.parseAsync(["node", "gflow", "image", "--id", "headless-image", "--prompt", "Prompt", "--no-headed"]);
+    expect(image?.opts().headed).toBe(false);
+  });
 });
