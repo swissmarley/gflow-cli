@@ -31,7 +31,7 @@ export class FlowPage implements FlowAutomation {
 
   async assertReady(): Promise<void> {
     const locators = flowLocators(this.page);
-    if ((await locators.manualActionMarker.count()) > 0) {
+    if (await locators.manualActionMarker.first().isVisible().catch(() => false)) {
       throw new ManualActionRequiredError("Flow requires login, consent, or verification.");
     }
     if ((await locators.promptBox.count()) === 0) {
@@ -63,12 +63,14 @@ export class FlowPage implements FlowAutomation {
     }
 
     const generationTimeoutSeconds = input.job.timeout ?? (input.job.type === "video" ? 1800 : 900);
+    const initialDownloadCount = await locators.downloadLinks.count();
     await locators.promptBox.fill(input.job.prompt);
     await locators.generateButton.click();
-    await this.waitForBlockingStates(generationTimeoutSeconds * 1000);
+    await this.waitForBlockingStates(initialDownloadCount + input.job.outputs, generationTimeoutSeconds * 1000);
 
     const artifacts = [];
-    const downloadCount = Math.min(input.job.outputs, await locators.downloadLinks.count());
+    const availableDownloadCount = await locators.downloadLinks.count();
+    const downloadCount = Math.min(input.job.outputs, availableDownloadCount - initialDownloadCount);
 
     if (downloadCount === 0) {
       throw new GenerationFailedError("No downloadable results appeared.");
@@ -113,22 +115,27 @@ export class FlowPage implements FlowAutomation {
     };
   }
 
-  private async waitForBlockingStates(timeout: number): Promise<void> {
+  private async waitForBlockingStates(expectedDownloadCount: number, timeout: number): Promise<void> {
     const locators = flowLocators(this.page);
-    await Promise.race([
-      locators.downloadLinks.first().waitFor({ state: "visible", timeout }),
-      locators.rateLimitMarker.waitFor({ state: "visible", timeout }).then(() => {
+    const deadline = Date.now() + timeout;
+
+    while (Date.now() < deadline) {
+      if ((await locators.downloadLinks.count()) >= expectedDownloadCount) return;
+      if (await locators.rateLimitMarker.first().isVisible().catch(() => false)) {
         throw new RateLimitedError("Flow displayed a rate limit or unusual activity message.");
-      }),
-      locators.creditMarker.waitFor({ state: "visible", timeout }).then(() => {
+      }
+      if (await locators.creditMarker.first().isVisible().catch(() => false)) {
         throw new CreditLimitError("Flow displayed a credit or quota message.");
-      }),
-      locators.blockedMarker.waitFor({ state: "visible", timeout }).then(() => {
+      }
+      if (await locators.blockedMarker.first().isVisible().catch(() => false)) {
         throw new GenerationBlockedError("Flow displayed a policy block message.");
-      }),
-      locators.failedMarker.waitFor({ state: "visible", timeout }).then(() => {
+      }
+      if (await locators.failedMarker.first().isVisible().catch(() => false)) {
         throw new GenerationFailedError("Flow displayed a generation failed message.");
-      })
-    ]);
+      }
+      await this.page.waitForTimeout(250);
+    }
+
+    throw new GenerationFailedError(`Timed out waiting for ${expectedDownloadCount} downloadable result(s).`);
   }
 }

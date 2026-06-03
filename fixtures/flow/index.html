@@ -36,13 +36,17 @@
       <section id="results"></section>
     </main>
     <script>
+      const params = new URLSearchParams(window.location.search);
+      const delay = Number(params.get("delay") ?? "0");
       document.getElementById("generate").addEventListener("click", () => {
-        const link = document.createElement("a");
-        link.textContent = "Download";
-        link.setAttribute("aria-label", "Download generated image");
-        link.href = "data:image/png;base64,Zml4dHVyZSBhc3NldA==";
-        link.download = "fixture.png";
-        document.getElementById("results").appendChild(link);
+        window.setTimeout(() => {
+          const link = document.createElement("a");
+          link.textContent = "Download";
+          link.setAttribute("aria-label", "Download generated image");
+          link.href = "data:image/png;base64,Zml4dHVyZSBhc3NldA==";
+          link.download = "fixture.png";
+          document.getElementById("results").appendChild(link);
+        }, delay);
       });
     </script>
   </body>

@@ -40,4 +40,48 @@ describe("FlowPage fixture", () => {
       await context.close();
     }
   });
+
+  it("waits for fresh outputs instead of reusing stale download links", async () => {
+    const profileDir = await mkdtemp(join(tmpdir(), "gflow-profile-"));
+    const outDir = await mkdtemp(join(tmpdir(), "gflow-output-"));
+    const context = await chromium.launchPersistentContext(profileDir, {
+      headless: true,
+      acceptDownloads: true
+    });
+
+    try {
+      const page = context.pages()[0] ?? (await context.newPage());
+      await page.goto(`file://${process.cwd()}/fixtures/flow/index.html?delay=100`);
+
+      const flow = new FlowPage(page);
+      const first = await flow.runJob({
+        job: {
+          id: "first-image",
+          type: "image",
+          prompt: "First image",
+          outputs: 1,
+          out: outDir,
+          ingredients: []
+        },
+        outDir
+      });
+      const second = await flow.runJob({
+        job: {
+          id: "second-image",
+          type: "image",
+          prompt: "Second image",
+          outputs: 1,
+          out: outDir,
+          ingredients: []
+        },
+        outDir
+      });
+
+      expect(first.artifacts[0]?.path).toContain("first-image-001.png");
+      expect(second.artifacts[0]?.path).toContain("second-image-001.png");
+      expect(await page.getByRole("link", { name: /download/i }).count()).toBe(2);
+    } finally {
+      await context.close();
+    }
+  });
 });
