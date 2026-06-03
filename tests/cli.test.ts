@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { FlowAutomation } from "../src/flow/types.js";
-import { createProgram } from "../src/cli.js";
+import { createProgram, runCli } from "../src/cli.js";
 
 describe("CLI", () => {
   it("runs an image command through automation", async () => {
@@ -52,5 +52,34 @@ describe("CLI", () => {
     ]);
 
     expect(automation.runJob).toHaveBeenCalled();
+  });
+
+  it("returns zero for top-level help and version", async () => {
+    await expect(runCli(["node", "gflow", "--help"])).resolves.toBe(0);
+    await expect(runCli(["node", "gflow", "--version"])).resolves.toBe(0);
+  });
+
+  it("rejects malformed integer options", async () => {
+    const program = createProgram({
+      automation: {
+        runJob: vi.fn()
+      }
+    });
+
+    await expect(
+      program.parseAsync(["node", "gflow", "image", "--id", "bad-number", "--prompt", "Prompt", "--outputs", "2abc"])
+    ).rejects.toMatchObject({
+      code: "commander.invalidArgument"
+    });
+  });
+
+  it("parses auth login as a subcommand", () => {
+    const program = createProgram();
+    const auth = program.commands.find((command) => command.name() === "auth");
+    const login = auth?.commands.find((command) => command.name() === "login");
+
+    expect(auth).toBeDefined();
+    expect(login).toBeDefined();
+    expect(login?.options.map((option) => option.long)).toContain("--profile");
   });
 });

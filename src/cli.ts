@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { Command } from "commander";
+import { Command, CommanderError, InvalidArgumentError } from "commander";
 import { openBrowserSession } from "./browser/session.js";
 import { exitCodeForError, messageForError } from "./errors.js";
 import { FlowPage } from "./flow/page.js";
@@ -10,6 +10,13 @@ import { resolveOutputDir } from "./config/paths.js";
 
 export interface CreateProgramOptions {
   automation?: FlowAutomation;
+}
+
+function parseIntegerOption(value: string): number {
+  if (!/^\d+$/.test(value)) {
+    throw new InvalidArgumentError("must be a positive integer");
+  }
+  return Number.parseInt(value, 10);
 }
 
 async function realAutomation(profile: string, headed: boolean): Promise<{ automation: FlowAutomation; close(): Promise<void> }> {
@@ -25,11 +32,13 @@ async function realAutomation(profile: string, headed: boolean): Promise<{ autom
 export function createProgram(options: CreateProgramOptions = {}): Command {
   const program = new Command();
   program.name("gflow").description("Local browser automation CLI for Google Flow.").version("0.1.0");
+  program.exitOverride();
 
-  program
-    .command("auth login")
+  const auth = program.command("auth").description("Manage the local Flow browser session.");
+  auth
+    .command("login")
     .option("--profile <name>", "browser profile name", "default")
-    .action(async (command) => {
+    .action(async (command: { profile: string }) => {
       const session = await openBrowserSession({ profile: command.profile, headed: true });
       await session.page.goto("https://labs.google/fx/tools/flow");
       console.log("Complete login in the browser, then run `gflow doctor`.");
@@ -58,11 +67,12 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .option("--project <name>", "Flow project")
     .option("--model <name>", "Flow-visible model")
     .option("--ratio <ratio>", "Flow-visible aspect ratio")
-    .option("--outputs <n>", "number of outputs", (value) => Number.parseInt(value, 10), 1)
-    .option("--timeout <seconds>", "generation timeout in seconds", (value) => Number.parseInt(value, 10))
+    .option("--outputs <n>", "number of outputs", parseIntegerOption, 1)
+    .option("--timeout <seconds>", "generation timeout in seconds", parseIntegerOption)
     .option("--out <path>", "output directory", "./gflow-output")
     .option("--profile <name>", "browser profile name", "default")
-    .option("--headed", "show browser", true)
+    .option("--headed", "show browser")
+    .option("--no-headed", "run browser headless")
     .action(async (command) => {
       const job = parseImageJob({
         id: command.id,
@@ -91,12 +101,13 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .option("--project <name>", "Flow project")
     .option("--model <name>", "Flow-visible model")
     .option("--ratio <ratio>", "Flow-visible aspect ratio")
-    .option("--duration <seconds>", "Flow-visible duration", (value) => Number.parseInt(value, 10))
-    .option("--outputs <n>", "number of outputs", (value) => Number.parseInt(value, 10), 1)
-    .option("--timeout <seconds>", "generation timeout in seconds", (value) => Number.parseInt(value, 10))
+    .option("--duration <seconds>", "Flow-visible duration", parseIntegerOption)
+    .option("--outputs <n>", "number of outputs", parseIntegerOption, 1)
+    .option("--timeout <seconds>", "generation timeout in seconds", parseIntegerOption)
     .option("--out <path>", "output directory", "./gflow-output")
     .option("--profile <name>", "browser profile name", "default")
-    .option("--headed", "show browser", true)
+    .option("--headed", "show browser")
+    .option("--no-headed", "run browser headless")
     .action(async (command) => {
       const job = parseVideoJob({
         id: command.id,
@@ -124,7 +135,8 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .argument("<file>", "YAML pipeline file")
     .option("--out <path>", "output directory", "./gflow-output")
     .option("--profile <name>", "browser profile name", "default")
-    .option("--headed", "show browser", true)
+    .option("--headed", "show browser")
+    .option("--no-headed", "run browser headless")
     .option("--continue-on-failure", "continue after ordinary generation failures", false)
     .action(async (file, command) => {
       const batch = parseBatchYaml(await readFile(file, "utf8"));
@@ -142,7 +154,6 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       }
     });
 
-  program.exitOverride();
   program.configureOutput({
     writeErr: (text) => process.stderr.write(text)
   });
@@ -156,6 +167,12 @@ export async function runCli(argv: string[]): Promise<number> {
     await program.parseAsync(argv);
     return 0;
   } catch (error) {
+    if (
+      error instanceof CommanderError &&
+      (error.code === "commander.helpDisplayed" || error.code === "commander.version" || error.code === "commander.invalidArgument")
+    ) {
+      return error.exitCode;
+    }
     console.error(messageForError(error));
     return exitCodeForError(error);
   }
