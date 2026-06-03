@@ -77,7 +77,7 @@ export class FlowPage implements FlowAutomation {
     }
 
     for (let index = 0; index < downloadCount; index += 1) {
-      const download = await Promise.all([this.page.waitForEvent("download"), locators.downloadLinks.nth(index).click()]).then(
+      const download = await Promise.all([this.page.waitForEvent("download"), locators.downloadLinks.nth(initialDownloadCount + index).click()]).then(
         ([downloadResult]) => downloadResult
       );
       const suggested = download.suggestedFilename();

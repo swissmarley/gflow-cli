@@ -1,4 +1,4 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -79,6 +79,8 @@ describe("FlowPage fixture", () => {
 
       expect(first.artifacts[0]?.path).toContain("first-image-001.png");
       expect(second.artifacts[0]?.path).toContain("second-image-001.png");
+      await expect(readFile(first.artifacts[0]!.path, "utf8")).resolves.toBe("fixture generation 1");
+      await expect(readFile(second.artifacts[0]!.path, "utf8")).resolves.toBe("fixture generation 2");
       expect(await page.getByRole("link", { name: /download/i }).count()).toBe(2);
     } finally {
       await context.close();
