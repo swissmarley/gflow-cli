@@ -1,0 +1,46 @@
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
+
+export interface ArtifactPlanInput {
+  outDir: string;
+  jobId: string;
+  index: number;
+  extension: string;
+}
+
+export interface ArtifactPlan {
+  assetPath: string;
+  metadataPath: string;
+}
+
+export interface ArtifactMetadata {
+  jobId: string;
+  type: "image" | "video";
+  prompt: string;
+  project?: string;
+  model?: string;
+  ratio?: string;
+  duration?: number;
+  requestedOutputs: number;
+  downloadedAt: string;
+  source: "google-flow-browser";
+  flowUrl: string;
+  status: "downloaded";
+}
+
+export function createArtifactPlan(input: ArtifactPlanInput): ArtifactPlan {
+  const cleanExtension = input.extension.startsWith(".") ? input.extension : `.${input.extension}`;
+  const index = String(input.index).padStart(3, "0");
+  const jobDir = join(input.outDir, input.jobId);
+  const basename = `${input.jobId}-${index}`;
+
+  return {
+    assetPath: join(jobDir, `${basename}${cleanExtension}`),
+    metadataPath: join(jobDir, `${basename}.json`)
+  };
+}
+
+export async function writeArtifactMetadata(path: string, metadata: ArtifactMetadata): Promise<void> {
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, `${JSON.stringify(metadata, null, 2)}\n`, "utf8");
+}
