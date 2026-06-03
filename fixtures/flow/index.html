@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Flow Fixture</title>
+  </head>
+  <body>
+    <main data-testid="flow-ready">
+      <label>
+        Project
+        <input aria-label="Project" />
+      </label>
+      <button>Image</button>
+      <button>Video</button>
+      <label>
+        Prompt
+        <textarea aria-label="Prompt"></textarea>
+      </label>
+      <label>
+        Model
+        <input aria-label="Model" />
+      </label>
+      <label>
+        Aspect ratio
+        <input aria-label="Aspect ratio" />
+      </label>
+      <label>
+        Duration
+        <input aria-label="Duration" />
+      </label>
+      <label>
+        Outputs
+        <input aria-label="Outputs" />
+      </label>
+      <button id="generate">Generate</button>
+      <section id="results"></section>
+    </main>
+    <script>
+      document.getElementById("generate").addEventListener("click", () => {
+        const link = document.createElement("a");
+        link.textContent = "Download";
+        link.setAttribute("aria-label", "Download generated image");
+        link.href = "data:image/png;base64,Zml4dHVyZSBhc3NldA==";
+        link.download = "fixture.png";
+        document.getElementById("results").appendChild(link);
+      });
+    </script>
+  </body>
+</html>

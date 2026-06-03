@@ -1216,13 +1216,11 @@ Create `fixtures/flow/index.html`:
       <section id="results"></section>
     </main>
     <script>
-      const params = new URLSearchParams(window.location.search);
-      const fixtureAsset = params.get("fixtureAsset");
       document.getElementById("generate").addEventListener("click", () => {
         const link = document.createElement("a");
         link.textContent = "Download";
         link.setAttribute("aria-label", "Download generated image");
-        link.href = fixtureAsset ? `file://${fixtureAsset}` : "data:text/plain,fixture";
+        link.href = "data:image/png;base64,Zml4dHVyZSBhc3NldA==";
         link.download = "fixture.png";
         document.getElementById("results").appendChild(link);
       });
