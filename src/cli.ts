@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { Command, CommanderError, InvalidArgumentError } from "commander";
-import { openBrowserSession } from "./browser/session.js";
+import { BROWSER_CHANNELS, DEFAULT_BROWSER_CHANNEL, openBrowserSession, type BrowserChannel } from "./browser/session.js";
 import { exitCodeForError, messageForError } from "./errors.js";
 import { FlowPage } from "./flow/page.js";
 import type { FlowAutomation } from "./flow/types.js";
@@ -19,8 +19,15 @@ function parseIntegerOption(value: string): number {
   return Number.parseInt(value, 10);
 }
 
-async function realAutomation(profile: string, headed: boolean): Promise<{ automation: FlowAutomation; close(): Promise<void> }> {
-  const session = await openBrowserSession({ profile, headed });
+function parseBrowserOption(value: string): BrowserChannel {
+  if (!BROWSER_CHANNELS.includes(value as BrowserChannel)) {
+    throw new InvalidArgumentError(`must be one of: ${BROWSER_CHANNELS.join(", ")}`);
+  }
+  return value as BrowserChannel;
+}
+
+async function realAutomation(profile: string, headed: boolean, browser: BrowserChannel): Promise<{ automation: FlowAutomation; close(): Promise<void> }> {
+  const session = await openBrowserSession({ profile, headed, browser });
   const flow = new FlowPage(session.page);
   await flow.open();
   return {
@@ -38,8 +45,9 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
   auth
     .command("login")
     .option("--profile <name>", "browser profile name", "default")
-    .action(async (command: { profile: string }) => {
-      const session = await openBrowserSession({ profile: command.profile, headed: true });
+    .option("--browser <name>", "browser channel for Google login: chrome or chromium", parseBrowserOption, DEFAULT_BROWSER_CHANNEL)
+    .action(async (command: { profile: string; browser: BrowserChannel }) => {
+      const session = await openBrowserSession({ profile: command.profile, headed: true, browser: command.browser });
       await session.page.goto("https://labs.google/fx/tools/flow");
       console.log("Complete login in the browser, then run `gflow doctor`.");
     });
@@ -47,9 +55,10 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
   program
     .command("doctor")
     .option("--profile <name>", "browser profile name", "default")
+    .option("--browser <name>", "browser channel for Flow automation: chrome or chromium", parseBrowserOption, DEFAULT_BROWSER_CHANNEL)
     .option("--headed", "show browser", false)
     .action(async (command) => {
-      const owned = await realAutomation(command.profile, command.headed);
+      const owned = await realAutomation(command.profile, command.headed, command.browser);
       try {
         if (owned.automation instanceof FlowPage) {
           await owned.automation.assertReady();
@@ -71,6 +80,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .option("--timeout <seconds>", "generation timeout in seconds", parseIntegerOption)
     .option("--out <path>", "output directory", "./gflow-output")
     .option("--profile <name>", "browser profile name", "default")
+    .option("--browser <name>", "browser channel for Flow automation: chrome or chromium", parseBrowserOption, DEFAULT_BROWSER_CHANNEL)
     .option("--headed", "show browser", true)
     .option("--no-headed", "run browser headless")
     .action(async (command) => {
@@ -86,7 +96,9 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
         out: command.out
       });
       const outDir = resolveOutputDir(command.out);
-      const owned = options.automation ? { automation: options.automation, close: async () => undefined } : await realAutomation(command.profile, command.headed);
+      const owned = options.automation
+        ? { automation: options.automation, close: async () => undefined }
+        : await realAutomation(command.profile, command.headed, command.browser);
       try {
         await owned.automation.runJob({ job, outDir });
       } finally {
@@ -106,6 +118,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .option("--timeout <seconds>", "generation timeout in seconds", parseIntegerOption)
     .option("--out <path>", "output directory", "./gflow-output")
     .option("--profile <name>", "browser profile name", "default")
+    .option("--browser <name>", "browser channel for Flow automation: chrome or chromium", parseBrowserOption, DEFAULT_BROWSER_CHANNEL)
     .option("--headed", "show browser", true)
     .option("--no-headed", "run browser headless")
     .action(async (command) => {
@@ -122,7 +135,9 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
         out: command.out
       });
       const outDir = resolveOutputDir(command.out);
-      const owned = options.automation ? { automation: options.automation, close: async () => undefined } : await realAutomation(command.profile, command.headed);
+      const owned = options.automation
+        ? { automation: options.automation, close: async () => undefined }
+        : await realAutomation(command.profile, command.headed, command.browser);
       try {
         await owned.automation.runJob({ job, outDir });
       } finally {
@@ -135,13 +150,16 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .argument("<file>", "YAML pipeline file")
     .option("--out <path>", "output directory", "./gflow-output")
     .option("--profile <name>", "browser profile name", "default")
+    .option("--browser <name>", "browser channel for Flow automation: chrome or chromium", parseBrowserOption, DEFAULT_BROWSER_CHANNEL)
     .option("--headed", "show browser", true)
     .option("--no-headed", "run browser headless")
     .option("--continue-on-failure", "continue after ordinary generation failures", false)
     .action(async (file, command) => {
       const batch = parseBatchYaml(await readFile(file, "utf8"));
       const outDir = resolveOutputDir(command.out);
-      const owned = options.automation ? { automation: options.automation, close: async () => undefined } : await realAutomation(command.profile, command.headed);
+      const owned = options.automation
+        ? { automation: options.automation, close: async () => undefined }
+        : await realAutomation(command.profile, command.headed, command.browser);
       try {
         await runJobs({
           jobs: batch.jobs.map((job) => ({ ...job, out: command.out })),

@@ -28,6 +28,20 @@ npm run dev -- auth login
 
 Complete Google login in the browser. Browser profile state is stored in `.gflow/profiles/default`.
 
+Login defaults to your installed Google Chrome browser because Google may reject Playwright's bundled Chromium with "This browser or app may not be secure." For fixture testing or non-login fallback, you can still choose bundled Chromium:
+
+```bash
+npm run dev -- auth login --browser chromium
+```
+
+If Chrome is not installed, install it first:
+
+```bash
+brew install --cask google-chrome
+```
+
+or download it from https://www.google.com/chrome/.
+
 ## Doctor
 
 ```bash
@@ -35,6 +49,8 @@ npm run dev -- doctor
 ```
 
 `doctor` checks whether Flow opens, the profile appears logged in, and the expected UI controls are visible.
+
+Use the same browser channel for `doctor`, `image`, `video`, and `batch` that you used for login. The default is `chrome`.
 
 ## Image
 

@@ -81,9 +81,10 @@ describe("CLI", () => {
     expect(auth).toBeDefined();
     expect(login).toBeDefined();
     expect(login?.options.map((option) => option.long)).toContain("--profile");
+    expect(login?.options.map((option) => option.long)).toContain("--browser");
   });
 
-  it("runs headed by default and supports no-headed", async () => {
+  it("uses Chrome by default for real browser commands and supports no-headed", async () => {
     const automation: FlowAutomation = {
       runJob: vi.fn(async () => ({
         jobId: "headed-image",
@@ -96,8 +97,24 @@ describe("CLI", () => {
 
     await program.parseAsync(["node", "gflow", "image", "--id", "headed-image", "--prompt", "Prompt"]);
     expect(image?.opts().headed).toBe(true);
+    expect(image?.opts().browser).toBe("chrome");
 
-    await program.parseAsync(["node", "gflow", "image", "--id", "headless-image", "--prompt", "Prompt", "--no-headed"]);
+    await program.parseAsync(["node", "gflow", "image", "--id", "headless-image", "--prompt", "Prompt", "--browser", "chromium", "--no-headed"]);
     expect(image?.opts().headed).toBe(false);
+    expect(image?.opts().browser).toBe("chromium");
+  });
+
+  it("rejects unsupported browser channels", async () => {
+    const program = createProgram({
+      automation: {
+        runJob: vi.fn()
+      }
+    });
+
+    await expect(
+      program.parseAsync(["node", "gflow", "image", "--id", "bad-browser", "--prompt", "Prompt", "--browser", "firefox"])
+    ).rejects.toMatchObject({
+      code: "commander.invalidArgument"
+    });
   });
 });
