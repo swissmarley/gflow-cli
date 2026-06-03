@@ -1,5 +1,25 @@
 import { describe, expect, it } from "vitest";
-import { messageForBrowserLaunchError } from "../src/browser/session.js";
+import { buildBrowserLaunchOptions, messageForBrowserLaunchError } from "../src/browser/session.js";
+
+describe("buildBrowserLaunchOptions", () => {
+  it("uses real Chrome with the normal Chromium sandbox enabled", () => {
+    expect(buildBrowserLaunchOptions({ profile: "default", headed: true, browser: "chrome" })).toMatchObject({
+      acceptDownloads: true,
+      channel: "chrome",
+      chromiumSandbox: true,
+      headless: false
+    });
+  });
+
+  it("keeps bundled Chromium as a fixture/testing fallback", () => {
+    expect(buildBrowserLaunchOptions({ profile: "default", headed: false, browser: "chromium" })).toMatchObject({
+      acceptDownloads: true,
+      channel: undefined,
+      chromiumSandbox: undefined,
+      headless: true
+    });
+  });
+});
 
 describe("messageForBrowserLaunchError", () => {
   it("explains how to fix a missing Chrome channel", () => {

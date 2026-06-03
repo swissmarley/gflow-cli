@@ -14,7 +14,7 @@ import { createArtifactPlan, writeArtifactMetadata } from "../output/artifacts.j
 import type { FlowAutomation, FlowAutomationRunInput, FlowJobResult } from "./types.js";
 import { flowLocators } from "./locators.js";
 
-const FLOW_URL = "https://labs.google/fx/tools/flow";
+export const FLOW_URL = "https://labs.google/fx/tools/flow";
 
 async function fillOptional(locator: Locator, value: string | number | undefined): Promise<void> {
   if (value === undefined) return;

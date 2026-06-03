@@ -82,6 +82,7 @@ describe("CLI", () => {
     expect(login).toBeDefined();
     expect(login?.options.map((option) => option.long)).toContain("--profile");
     expect(login?.options.map((option) => option.long)).toContain("--browser");
+    expect(login?.options.map((option) => option.long)).toContain("--playwright");
   });
 
   it("uses Chrome by default for real browser commands and supports no-headed", async () => {

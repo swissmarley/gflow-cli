@@ -26,21 +26,23 @@ npm install --cache ./.npm-cache
 npm run dev -- auth login
 ```
 
-Complete Google login in the browser. Browser profile state is stored in `.gflow/profiles/default`.
+This opens a normal Google Chrome window with an isolated `gflow` profile. Complete Google login there, close that Chrome window, then run `doctor`. Browser profile state is stored in `.gflow/profiles/default`.
 
-Login defaults to your installed Google Chrome browser because Google may reject Playwright's bundled Chromium with "This browser or app may not be secure." For fixture testing or non-login fallback, you can still choose bundled Chromium:
-
-```bash
-npm run dev -- auth login --browser chromium
-```
-
-If Chrome is not installed, install it first:
+Login intentionally runs outside Playwright because Google may reject automation-controlled login pages with "This browser or app may not be secure." If Chrome is not installed, install it first:
 
 ```bash
 brew install --cask google-chrome
 ```
 
 or download it from https://www.google.com/chrome/.
+
+For fixture testing or diagnostics, you can still force the older Playwright login path, but Google sign-in may reject it:
+
+```bash
+npm run dev -- auth login --playwright --browser chromium
+```
+
+If Chrome shows an unsupported `--no-sandbox` banner, you are using a Playwright-controlled login path or an older build. Use plain `npm run dev -- auth login` for manual login.
 
 ## Doctor
 
