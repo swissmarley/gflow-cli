@@ -1,9 +1,8 @@
 import { readFile } from "node:fs/promises";
 import { Command, CommanderError, InvalidArgumentError } from "commander";
-import { openManualChromeLogin } from "./browser/manual-login.js";
-import { BROWSER_CHANNELS, DEFAULT_BROWSER_CHANNEL, openBrowserSession, type BrowserChannel } from "./browser/session.js";
+import { BROWSER_CHANNELS, DEFAULT_BROWSER_CHANNEL, launchDebuggableChrome, openBrowserSession, type BrowserChannel } from "./browser/session.js";
 import { exitCodeForError, messageForError } from "./errors.js";
-import { FLOW_URL, FlowPage } from "./flow/page.js";
+import { FlowPage } from "./flow/page.js";
 import type { FlowAutomation } from "./flow/types.js";
 import { parseBatchYaml, parseImageJob, parseVideoJob } from "./jobs/schema.js";
 import { runJobs } from "./jobs/runner.js";
@@ -46,27 +45,21 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
   auth
     .command("login")
     .option("--profile <name>", "browser profile name", "default")
-    .option("--browser <name>", "browser channel for Playwright login: chrome or chromium", parseBrowserOption, DEFAULT_BROWSER_CHANNEL)
-    .option("--playwright", "open the login page through Playwright instead of normal Chrome", false)
-    .action(async (command: { profile: string; browser: BrowserChannel; playwright: boolean }) => {
-      if (!command.playwright) {
-        const plan = await openManualChromeLogin({ profile: command.profile, url: FLOW_URL });
-        console.log(`Opened Google Chrome for login with profile: ${plan.profileDir}`);
-        console.log("Complete login, close the gflow Chrome window, then run `gflow doctor`.");
-        return;
-      }
-
-      const session = await openBrowserSession({ profile: command.profile, headed: true, browser: command.browser });
-      await session.page.goto(FLOW_URL);
-      console.warn("Playwright-controlled login may be rejected by Google. Prefer `gflow auth login` without `--playwright`.");
-      console.log("Complete login in the browser, then run `gflow doctor`.");
+    .action(async (command: { profile: string }) => {
+      // Launch the real Chrome with a debugging port and leave it open. Subsequent
+      // commands attach to this exact window over CDP, so Google sees one continuous
+      // human session instead of an automated browser to challenge.
+      const plan = await launchDebuggableChrome(command.profile, true);
+      console.log(`Opened Google Chrome for login with profile: ${plan.profileDir}`);
+      console.log("Complete login in that window and leave it open, then run `gflow doctor`.");
     });
 
   program
     .command("doctor")
     .option("--profile <name>", "browser profile name", "default")
     .option("--browser <name>", "browser channel for Flow automation: chrome or chromium", parseBrowserOption, DEFAULT_BROWSER_CHANNEL)
-    .option("--headed", "show browser", false)
+    .option("--headed", "show browser", true)
+    .option("--no-headed", "run browser headless")
     .action(async (command) => {
       const owned = await realAutomation(command.profile, command.headed, command.browser);
       try {

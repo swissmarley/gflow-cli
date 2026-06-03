@@ -2,21 +2,23 @@ import type { Page } from "playwright";
 
 export function flowLocators(page: Page) {
   return {
-    promptBox: page.getByLabel("Prompt"),
-    generateButton: page.getByRole("button", { name: /generate/i }),
-    imageModeButton: page.getByRole("button", { name: /image/i }),
-    videoModeButton: page.getByRole("button", { name: /video/i }),
-    projectInput: page.getByLabel("Project"),
-    modelInput: page.getByLabel("Model"),
-    ratioInput: page.getByLabel("Aspect ratio"),
-    durationInput: page.getByLabel("Duration"),
-    outputCountInput: page.getByLabel("Outputs"),
-    downloadLinks: page.getByRole("link", { name: /download/i }),
-    loginMarker: page.getByTestId("flow-ready"),
-    manualActionMarker: page.getByText(/manual action|sign in|verify|consent/i),
-    rateLimitMarker: page.getByText(/too quickly|unusual activity|rate limit/i),
-    creditMarker: page.getByText(/credit|quota/i),
-    blockedMarker: page.getByText(/blocked|policy|cannot help/i),
-    failedMarker: page.getByText(/failed|try again/i)
+    // The Flow prompt is a contenteditable div (role=textbox), placeholder
+    // "What do you want to create?" — not a labeled <textarea>.
+    promptBox: page.locator('[role="textbox"][contenteditable="true"]'),
+    // Signed-in Flow dashboard/landing (projects view). Proves an authenticated session
+    // for `doctor`; the prompt box only exists once a project is open.
+    dashboardMarker: page.getByRole("button", { name: /new project/i }),
+    newProjectButton: page.getByRole("button", { name: /new project/i }),
+    // Submit button: "Create" carrying the arrow_forward icon (disabled until the prompt
+    // has text). The sibling "add_2 Create" button is a different control.
+    submitButton: page.locator("button", { hasText: "Create" }).filter({ hasText: /arrow_forward/ }),
+    // The model/settings pill (e.g. "🍌 Nano Banana 2 / crop_16_9 / x2") opens the popover
+    // with Image/Video mode, aspect ratio, output count and model.
+    settingsButton: page.locator("button").filter({ hasText: /crop_(16_9|9_16|square|portrait|landscape)/ }),
+    rateLimitMarker: page.getByText(/unusual activity|trying again too|rate limit/i),
+    creditMarker: page.getByText(/run out of credits|insufficient credits|no credits left/i),
+    blockedMarker: page.getByText(/can.?t help with|violates|content policy/i),
+    failedMarker: page.getByText(/generation failed|couldn.?t generate|something went wrong/i),
+    manualActionMarker: page.getByText(/verify your identity|sign in to continue|consent required/i)
   };
 }

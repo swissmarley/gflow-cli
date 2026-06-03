@@ -31,12 +31,12 @@ export interface ArtifactMetadata {
 export function createArtifactPlan(input: ArtifactPlanInput): ArtifactPlan {
   const cleanExtension = input.extension.startsWith(".") ? input.extension : `.${input.extension}`;
   const index = String(input.index).padStart(3, "0");
-  const jobDir = join(input.outDir, input.jobId);
+  // Files are written directly into outDir; the job-id prefix keeps them unique across jobs.
   const basename = `${input.jobId}-${index}`;
 
   return {
-    assetPath: join(jobDir, `${basename}${cleanExtension}`),
-    metadataPath: join(jobDir, `${basename}.json`)
+    assetPath: join(input.outDir, `${basename}${cleanExtension}`),
+    metadataPath: join(input.outDir, `${basename}.json`)
   };
 }
 

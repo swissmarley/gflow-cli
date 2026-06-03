@@ -81,8 +81,6 @@ describe("CLI", () => {
     expect(auth).toBeDefined();
     expect(login).toBeDefined();
     expect(login?.options.map((option) => option.long)).toContain("--profile");
-    expect(login?.options.map((option) => option.long)).toContain("--browser");
-    expect(login?.options.map((option) => option.long)).toContain("--playwright");
   });
 
   it("uses Chrome by default for real browser commands and supports no-headed", async () => {
@@ -103,6 +101,15 @@ describe("CLI", () => {
     await program.parseAsync(["node", "gflow", "image", "--id", "headless-image", "--prompt", "Prompt", "--browser", "chromium", "--no-headed"]);
     expect(image?.opts().headed).toBe(false);
     expect(image?.opts().browser).toBe("chromium");
+  });
+
+  it("runs doctor headed by default so Flow renders for a logged-in profile", () => {
+    const program = createProgram();
+    const doctor = program.commands.find((command) => command.name() === "doctor");
+    const headed = doctor?.options.find((option) => option.long === "--headed");
+
+    expect(headed?.defaultValue).toBe(true);
+    expect(doctor?.options.map((option) => option.long)).toContain("--no-headed");
   });
 
   it("rejects unsupported browser channels", async () => {

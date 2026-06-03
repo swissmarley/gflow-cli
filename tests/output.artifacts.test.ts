@@ -13,8 +13,8 @@ describe("artifact output", () => {
       extension: ".mp4"
     });
 
-    expect(plan.assetPath).toBe("/tmp/out/hero-video/hero-video-001.mp4");
-    expect(plan.metadataPath).toBe("/tmp/out/hero-video/hero-video-001.json");
+    expect(plan.assetPath).toBe("/tmp/out/hero-video-001.mp4");
+    expect(plan.metadataPath).toBe("/tmp/out/hero-video-001.json");
   });
 
   it("writes metadata json beside the asset", async () => {

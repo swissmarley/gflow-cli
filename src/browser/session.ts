@@ -1,5 +1,13 @@
-import { chromium, type BrowserContext, type Page } from "playwright";
+import { execFile, spawn } from "node:child_process";
+import { lstat, mkdir, readFile, readlink, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { promisify } from "node:util";
+import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
 import { resolveProfileDir } from "../config/paths.js";
+import { FLOW_URL } from "../flow/page.js";
+
+const execFileAsync = promisify(execFile);
+const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 export const BROWSER_CHANNELS = ["chrome", "chromium"] as const;
 export type BrowserChannel = (typeof BROWSER_CHANNELS)[number];
@@ -18,10 +26,105 @@ export interface BrowserSession {
   close(): Promise<void>;
 }
 
+// Chrome writes SingletonLock/Cookie/Socket into the profile dir while running and
+// removes them on a clean quit; a crash or force-kill leaves them behind.
+const SINGLETON_FILES = ["SingletonLock", "SingletonCookie", "SingletonSocket"] as const;
+
+export function isSingletonLockError(error: unknown): boolean {
+  return error instanceof Error && (error.message.includes("ProcessSingleton") || error.message.includes("SingletonLock"));
+}
+
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    // ESRCH = no such process. EPERM = it exists but is owned by someone else.
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+// SingletonLock is a symlink whose target is "<hostname>-<pid>". If that pid is no
+// longer running, the lock is stale (Chrome was killed, not quit) and safe to clear.
+// If the owning Chrome is still alive we return false and leave the lock untouched.
+export async function clearStaleSingletonLock(profileDir: string): Promise<boolean> {
+  const lockPath = join(profileDir, "SingletonLock");
+  let target: string;
+  try {
+    if (!(await lstat(lockPath)).isSymbolicLink()) return false;
+    target = await readlink(lockPath);
+  } catch {
+    return false;
+  }
+
+  const pid = Number.parseInt(target.slice(target.lastIndexOf("-") + 1), 10);
+  if (Number.isNaN(pid) || isProcessAlive(pid)) return false;
+
+  await Promise.all(SINGLETON_FILES.map((name) => rm(join(profileDir, name), { force: true })));
+  return true;
+}
+
+// Find the root Chrome process(es) launched against this exact profile dir — i.e. the
+// window `gflow auth login` opened. We match on the full --user-data-dir value (so the
+// user's normal Chrome, which uses a different dir, is never touched) and skip helper
+// processes (--type=...), which die with their parent.
+export async function findChromeProcessesForProfile(profileDir: string): Promise<number[]> {
+  if (process.platform === "win32") return [];
+  let stdout: string;
+  try {
+    ({ stdout } = await execFileAsync("ps", ["-Ao", "pid=,command="], { maxBuffer: 16 * 1024 * 1024 }));
+  } catch {
+    return [];
+  }
+
+  const needle = `--user-data-dir=${profileDir}`;
+  const pids: number[] = [];
+  for (const line of stdout.split("\n")) {
+    if (!(line.includes(`${needle} `) || line.endsWith(needle))) continue;
+    if (line.includes("--type=")) continue;
+    const pid = Number.parseInt(line.trimStart(), 10);
+    if (!Number.isNaN(pid) && pid !== process.pid) pids.push(pid);
+  }
+  return pids;
+}
+
+async function waitForExit(pid: number, timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (!isProcessAlive(pid)) return true;
+    await delay(150);
+  }
+  return !isProcessAlive(pid);
+}
+
+// Gracefully quit any Chrome holding this profile so Playwright can take it over.
+// SIGTERM first so Chrome flushes session cookies to disk (important right after login);
+// SIGKILL only as a last resort. Returns how many root processes were signalled.
+export async function closeChromeForProfile(profileDir: string): Promise<number> {
+  const pids = await findChromeProcessesForProfile(profileDir);
+  for (const pid of pids) {
+    try {
+      process.kill(pid, "SIGTERM");
+    } catch {
+      // Already gone between listing and killing — nothing to do.
+    }
+  }
+  for (const pid of pids) {
+    if (!(await waitForExit(pid, 8000))) {
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch {
+        // Already gone.
+      }
+    }
+  }
+  return pids.length;
+}
+
 export function messageForBrowserLaunchError(error: unknown, browser: BrowserChannel, profileDir?: string): string | undefined {
   if (!(error instanceof Error)) return undefined;
 
-  if (error.message.includes("ProcessSingleton") || error.message.includes("SingletonLock")) {
+  if (isSingletonLockError(error)) {
     return [
       `The gflow Chrome profile is already open${profileDir ? `: ${profileDir}` : "."}`,
       "Please quit the Chrome instance opened by `gflow auth login`, then run `gflow doctor` again.",
@@ -43,25 +146,147 @@ export function buildBrowserLaunchOptions(options: BrowserSessionOptions): Brows
     headless: !options.headed,
     acceptDownloads: true,
     channel: options.browser === "chrome" ? "chrome" : undefined,
-    chromiumSandbox: options.browser === "chrome" ? true : undefined
+    chromiumSandbox: options.browser === "chrome" ? true : undefined,
+    // Hide the automation fingerprint that makes Google challenge an already signed-in
+    // profile with a fresh 2FA/identity check. `--enable-automation` (a Playwright default)
+    // sets navigator.webdriver and shows the "controlled by automated test software" banner;
+    // dropping it plus AutomationControlled makes the session look like ordinary Chrome.
+    ignoreDefaultArgs: ["--enable-automation"],
+    args: ["--disable-blink-features=AutomationControlled"]
+  };
+}
+
+// Path to the real Google Chrome binary. Driving the genuine Chrome over CDP (rather than
+// a Playwright-spawned context) is what stops Google from challenging an already signed-in
+// session with a fresh 2FA check. Override with GFLOW_CHROME_PATH if Chrome lives elsewhere.
+export function resolveChromeExecutable(runtimePlatform: NodeJS.Platform = process.platform): string {
+  const override = process.env.GFLOW_CHROME_PATH;
+  if (override) return override;
+  if (runtimePlatform === "darwin") return "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+  if (runtimePlatform === "win32") return "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
+  return "google-chrome";
+}
+
+// Chrome with --remote-debugging-port writes the chosen port to DevToolsActivePort in the
+// profile dir (line 1 = port). It removes the file on a clean exit, so its presence plus a
+// live process means a debuggable Chrome we can attach to.
+async function readDevToolsPort(profileDir: string): Promise<number | undefined> {
+  try {
+    const contents = await readFile(join(profileDir, "DevToolsActivePort"), "utf8");
+    const port = Number.parseInt(contents.split("\n")[0]?.trim() ?? "", 10);
+    return Number.isNaN(port) ? undefined : port;
+  } catch {
+    return undefined;
+  }
+}
+
+async function waitForDevToolsPort(profileDir: string, timeoutMs: number): Promise<number | undefined> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const port = await readDevToolsPort(profileDir);
+    if (port) return port;
+    await delay(150);
+  }
+  return undefined;
+}
+
+export interface ChromeLaunch {
+  profileDir: string;
+  port: number;
+}
+
+// Launch a real Chrome bound to this profile with a debugging port and leave it running
+// (detached) so later commands can reattach to the same trusted, logged-in window.
+// --remote-allow-origins=* is required for Chrome >=111 to accept the CDP WebSocket.
+export async function launchDebuggableChrome(profile: string, headed: boolean): Promise<ChromeLaunch> {
+  const profileDir = resolveProfileDir(profile);
+  await mkdir(profileDir, { recursive: true });
+  await rm(join(profileDir, "DevToolsActivePort"), { force: true });
+
+  const args = [
+    `--user-data-dir=${profileDir}`,
+    "--remote-debugging-port=0",
+    "--remote-allow-origins=*",
+    "--no-first-run",
+    "--no-default-browser-check",
+    ...(headed ? [] : ["--headless=new"]),
+    FLOW_URL
+  ];
+
+  const child = spawn(resolveChromeExecutable(), args, { detached: true, stdio: "ignore" });
+  child.unref();
+
+  const port = await waitForDevToolsPort(profileDir, 30000);
+  if (port === undefined) {
+    throw new Error(
+      [
+        "Could not start Google Chrome with a debugging port.",
+        `Tried: ${resolveChromeExecutable()}`,
+        "Install Google Chrome (https://www.google.com/chrome/) or set GFLOW_CHROME_PATH to its executable, then try again."
+      ].join(" ")
+    );
+  }
+  return { profileDir, port };
+}
+
+function pickFlowPage(context: BrowserContext): Page | undefined {
+  return context.pages().find((page) => page.url().includes("labs.google"));
+}
+
+// Bundled-Chromium path, kept for local fixtures/tests (`--browser chromium`). Real Google
+// sign-in rejects this, but it is handy for offline fixture flows.
+async function openChromiumSession(options: BrowserSessionOptions, profileDir: string): Promise<BrowserSession> {
+  const context = await chromium
+    .launchPersistentContext(profileDir, buildBrowserLaunchOptions(options))
+    .catch((error: unknown) => {
+      throw new Error(messageForBrowserLaunchError(error, options.browser, profileDir) ?? (error instanceof Error ? error.message : String(error)));
+    });
+  const page = context.pages()[0] ?? (await context.newPage());
+  return {
+    context,
+    page,
+    close: () => context.close()
   };
 }
 
 export async function openBrowserSession(options: BrowserSessionOptions): Promise<BrowserSession> {
-  let context: BrowserContext;
   const profileDir = resolveProfileDir(options.profile);
-  try {
-    context = await chromium.launchPersistentContext(profileDir, buildBrowserLaunchOptions(options));
-  } catch (error) {
-    throw new Error(messageForBrowserLaunchError(error, options.browser, profileDir) ?? (error instanceof Error ? error.message : String(error)));
+
+  if (options.browser === "chromium") {
+    return openChromiumSession(options, profileDir);
   }
-  const page = context.pages()[0] ?? (await context.newPage());
+
+  // Reattach to the Chrome the user logged into if it is still running; otherwise start
+  // one and leave it open. Either way we drive the genuine session over CDP.
+  const running = (await findChromeProcessesForProfile(profileDir)).length > 0;
+  const existingPort = running ? await readDevToolsPort(profileDir) : undefined;
+  const port = existingPort ?? (await launchDebuggableChrome(options.profile, options.headed)).port;
+
+  let browser: Browser;
+  try {
+    browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
+  } catch (error) {
+    throw new Error(
+      [
+        `Could not connect to the gflow Chrome session on port ${port}.`,
+        "Run `gflow auth login`, complete login, leave that Chrome window open, then run this command again.",
+        error instanceof Error ? `(${error.message})` : ""
+      ]
+        .filter(Boolean)
+        .join(" ")
+    );
+  }
+
+  const context = browser.contexts()[0] ?? (await browser.newContext());
+  const page = pickFlowPage(context) ?? context.pages()[0] ?? (await context.newPage());
 
   return {
     context,
     page,
     async close() {
-      await context.close();
+      // Disconnect only — the user's Chrome (and its trusted, logged-in session) stays
+      // open so the next command can reuse it without another sign-in or 2FA prompt.
+      await browser.close();
     }
   };
 }

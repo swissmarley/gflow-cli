@@ -6,49 +6,33 @@
   </head>
   <body>
     <main data-testid="flow-ready">
-      <label>
-        Project
-        <input aria-label="Project" />
-      </label>
-      <button>Image</button>
-      <button>Video</button>
-      <label>
-        Prompt
-        <textarea aria-label="Prompt"></textarea>
-      </label>
-      <label>
-        Model
-        <input aria-label="Model" />
-      </label>
-      <label>
-        Aspect ratio
-        <input aria-label="Aspect ratio" />
-      </label>
-      <label>
-        Duration
-        <input aria-label="Duration" />
-      </label>
-      <label>
-        Outputs
-        <input aria-label="Outputs" />
-      </label>
-      <button id="generate">Generate</button>
+      <!-- Mirrors the real Flow editor: a contenteditable prompt and a "Create" submit
+           button that enables once the prompt has text, plus result <img> elements. -->
+      <div id="prompt" role="textbox" contenteditable="true" aria-label="Prompt"></div>
+      <button id="create" disabled>arrow_forwardCreate</button>
       <section id="results"></section>
     </main>
     <script>
       const params = new URLSearchParams(window.location.search);
       const delay = Number(params.get("delay") ?? "0");
+      const prompt = document.getElementById("prompt");
+      const create = document.getElementById("create");
       let generation = 0;
-      document.getElementById("generate").addEventListener("click", () => {
+
+      prompt.addEventListener("input", () => {
+        create.disabled = prompt.textContent.trim().length === 0;
+      });
+
+      create.addEventListener("click", () => {
+        if (create.disabled) return;
         generation += 1;
         const currentGeneration = generation;
         window.setTimeout(() => {
-          const link = document.createElement("a");
-          link.textContent = "Download";
-          link.setAttribute("aria-label", "Download generated image");
-          link.href = `data:text/plain,fixture generation ${currentGeneration}`;
-          link.download = "fixture.png";
-          document.getElementById("results").appendChild(link);
+          const img = document.createElement("img");
+          // Result media in real Flow are authenticated URLs; the fixture uses a data: URL
+          // so the same context-fetch download path can read the bytes offline.
+          img.src = `data:text/plain,fixture generation ${currentGeneration}`;
+          document.getElementById("results").appendChild(img);
         }, delay);
       });
     </script>
