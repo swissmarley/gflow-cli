@@ -14,7 +14,7 @@ browser session — no private APIs, no login bypass.
 
 <br>
 
-<img src="assets/demo.gif" alt="gflow demo: auth login, doctor, image and video generation" width="760">
+<img src="https://raw.githubusercontent.com/swissmarley/gflow-cli/main/assets/demo.gif" alt="gflow demo: auth login, doctor, image and video generation" width="760">
 
 </div>
 
