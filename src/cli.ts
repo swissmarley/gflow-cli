@@ -104,7 +104,10 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
         ? { automation: options.automation, close: async () => undefined }
         : await realAutomation(command.profile, command.headed, command.browser);
       try {
-        await owned.automation.runJob({ job, outDir });
+        const result = await owned.automation.runJob({ job, outDir });
+        for (const artifact of result.artifacts) {
+          console.log(`saved ${artifact.path}`);
+        }
       } finally {
         await owned.close();
       }
@@ -147,7 +150,10 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
         ? { automation: options.automation, close: async () => undefined }
         : await realAutomation(command.profile, command.headed, command.browser);
       try {
-        await owned.automation.runJob({ job, outDir });
+        const result = await owned.automation.runJob({ job, outDir });
+        for (const artifact of result.artifacts) {
+          console.log(`saved ${artifact.path}`);
+        }
       } finally {
         await owned.close();
       }

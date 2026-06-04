@@ -12,6 +12,10 @@ browser session — no private APIs, no login bypass.
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg)](https://nodejs.org)
 
+<br>
+
+<img src="assets/demo.gif" alt="gflow demo: auth login, doctor, image and video generation" width="760">
+
 </div>
 
 ---
