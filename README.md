@@ -104,6 +104,24 @@ npm run dev -- video \
 `veo-3.1-fast`) selects one. Video generations can take several minutes; the default timeout is
 30 minutes (override with `--timeout <seconds>`).
 
+### Frames (first/last frame to video)
+
+By default video is **text-to-video** (Flow's "Ingredients" mode). To animate between a first
+and last frame instead, pass image paths — `gflow` switches Flow to **Frames** mode and uploads
+them into the Start/End slots:
+
+```bash
+npm run dev -- video \
+  --id morph \
+  --prompt "smooth transition, cinematic" \
+  --start-frame ./frames/first.png \
+  --end-frame ./frames/last.png \
+  --out ~/Desktop/clips
+```
+
+`--end-frame` is optional (provide only `--start-frame` to animate from a single first frame).
+Image paths are resolved relative to the current directory.
+
 ## Batch
 
 ```bash

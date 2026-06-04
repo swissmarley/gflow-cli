@@ -4,5 +4,6 @@ dist/
 coverage/
 .gflow/
 gflow-output/
+docs/
 *.log
 .DS_Store

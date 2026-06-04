@@ -94,6 +94,11 @@ export class FlowPage implements FlowAutomation {
     await this.assertReady();
     await this.applySettings(input.job);
 
+    if (input.job.type === "video") {
+      if (input.job.startFrame) await this.uploadFrame("Start", input.job.startFrame);
+      if (input.job.endFrame) await this.uploadFrame("End", input.job.endFrame);
+    }
+
     if ((await locators.promptBox.count()) === 0) {
       throw new GenerationFailedError("Could not find the Flow prompt box. Open or create a project first.");
     }
@@ -190,6 +195,13 @@ export class FlowPage implements FlowAutomation {
     await this.pickOption(job.type === "video" ? /Video$/ : /Image$/);
     await this.page.waitForTimeout(400);
 
+    // Video input mode: Frames (first/last frame images) vs Ingredients (text-to-video).
+    if (job.type === "video") {
+      const wantsFrames = Boolean(job.startFrame || job.endFrame);
+      await this.pickOption(wantsFrames ? /Frames$/ : /Ingredients$/);
+      await this.page.waitForTimeout(300);
+    }
+
     if (job.ratio && RATIO_ICON[job.ratio]) await this.pickOption(new RegExp(`^${RATIO_ICON[job.ratio]}`));
     if (job.type === "video" && job.duration) await this.pickOption(new RegExp(`^${job.duration}s$`));
     await this.pickOption(job.outputs === 1 ? /^1x$/ : new RegExp(`^x${job.outputs}$`));
@@ -250,6 +262,37 @@ export class FlowPage implements FlowAutomation {
       await this.page.keyboard.press("Escape").catch(() => undefined);
     }
     await this.page.waitForTimeout(300);
+  }
+
+  // Frames mode: fill the Start/End frame slot. Clicking the slot opens the Add Media dialog;
+  // "Upload media" triggers a file chooser; the upload is auto-selected, and the dialog's
+  // confirm button ("Add to Prompt") assigns it to the slot and closes the dialog. A slot
+  // already filled has no "Start"/"End" label, so we skip it rather than overwrite.
+  private async uploadFrame(slot: "Start" | "End", filePath: string): Promise<void> {
+    const slotEl = this.page.getByText(slot, { exact: true }).first();
+    if ((await slotEl.count()) === 0) return;
+    await slotEl.click().catch(() => undefined);
+
+    const dialog = this.page.locator("[role=dialog],[aria-modal=true]").first();
+    await dialog.waitFor({ state: "visible", timeout: 10000 }).catch(() => undefined);
+
+    const uploadButton = dialog.locator("button").filter({ hasText: /upload media/i }).first();
+    const [chooser] = await Promise.all([
+      this.page.waitForEvent("filechooser", { timeout: 15000 }),
+      uploadButton.click()
+    ]);
+    await chooser.setFiles(filePath);
+
+    // The freshly uploaded image is auto-selected; wait for that, falling back to selecting
+    // the first tile if needed, then confirm.
+    const selected = dialog.locator('[role=option][aria-selected="true"]').first();
+    await selected.waitFor({ state: "visible", timeout: 30000 }).catch(async () => {
+      await dialog.locator("[role=option]").first().click().catch(() => undefined);
+    });
+
+    const confirm = dialog.locator("button").filter({ hasText: /add to (prompt|scene)/i }).first();
+    await confirm.click().catch(() => undefined);
+    await dialog.waitFor({ state: "hidden", timeout: 10000 }).catch(() => undefined);
   }
 
   private async fillPrompt(prompt: string): Promise<void> {

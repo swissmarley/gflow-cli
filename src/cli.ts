@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import { Command, CommanderError, InvalidArgumentError } from "commander";
 import { BROWSER_CHANNELS, DEFAULT_BROWSER_CHANNEL, launchDebuggableChrome, openBrowserSession, type BrowserChannel } from "./browser/session.js";
 import { exitCodeForError, messageForError } from "./errors.js";
@@ -118,6 +119,8 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .option("--ratio <ratio>", "Flow-visible aspect ratio")
     .option("--duration <seconds>", "Flow-visible duration", parseIntegerOption)
     .option("--outputs <n>", "number of outputs", parseIntegerOption, 1)
+    .option("--start-frame <path>", "first-frame image (switches Flow to Frames mode)")
+    .option("--end-frame <path>", "last-frame image (Frames mode)")
     .option("--timeout <seconds>", "generation timeout in seconds", parseIntegerOption)
     .option("--out <path>", "output directory", "./gflow-output")
     .option("--profile <name>", "browser profile name", "default")
@@ -134,6 +137,8 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
         ratio: command.ratio,
         duration: command.duration,
         outputs: command.outputs,
+        startFrame: command.startFrame ? resolve(process.cwd(), command.startFrame) : undefined,
+        endFrame: command.endFrame ? resolve(process.cwd(), command.endFrame) : undefined,
         timeout: command.timeout,
         out: command.out
       });
