@@ -1,10 +1,16 @@
 {
-  "name": "google-flow-cli",
+  "name": "@swissmarley/gflow-cli",
   "version": "0.1.0",
-  "description": "Local browser automation CLI for Google Flow.",
+  "description": "Command-line tool that drives Google Flow in your own logged-in Chrome to generate images and videos.",
   "type": "module",
   "bin": {
     "gflow": "./dist/src/index.js"
+  },
+  "files": [
+    "dist/src"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -13,13 +19,35 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:flow-fixture": "vitest run tests/flow.fixture.test.ts",
-    "doctor": "tsx src/index.ts doctor"
+    "doctor": "tsx src/index.ts doctor",
+    "prepare": "npm run build",
+    "prepublishOnly": "npm run lint && npm run build"
   },
-  "engines": {
-    "node": ">=20.0.0"
+  "keywords": [
+    "google-flow",
+    "flow",
+    "veo",
+    "cli",
+    "video-generation",
+    "image-generation",
+    "text-to-video",
+    "playwright",
+    "automation"
+  ],
+  "author": "swissmarley",
+  "license": "MIT",
+  "homepage": "https://github.com/swissmarley/gflow-cli#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/swissmarley/gflow-cli.git"
+  },
+  "bugs": {
+    "url": "https://github.com/swissmarley/gflow-cli/issues"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "dependencies": {
-    "@playwright/test": "^1.44.0",
     "commander": "^12.1.0",
     "playwright": "^1.44.0",
     "yaml": "^2.4.5",
