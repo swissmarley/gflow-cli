@@ -51,12 +51,35 @@ export class CharacterPage implements CharacterAutomation {
 
   async listCharacters(project?: string): Promise<CharacterSummary[]> {
     const projectId = await navigateToProject(this.page, project);
-    await this.page.goto(projectSubUrl(projectId, "characters"), { waitUntil: "domcontentloaded" });
-    await this.page.waitForTimeout(1500);
-    // VERIFY LIVE: character tile structure (name + thumbnail).
+    await this.page.goto(projectSubUrl(projectId, ""), { waitUntil: "domcontentloaded" });
+    await this.page.waitForTimeout(800);
+    await this.page.locator("button").filter({ hasText: /Characters/i }).first().click().catch(() => undefined);
+    await this.page.waitForTimeout(800);
     return this.page.evaluate(() => {
-      const tiles = [...document.querySelectorAll("[data-character-id],[role=listitem],figure")];
       const results: Array<{ name: string; thumbnailUrl?: string }> = [];
+      const seen = new Set<string>();
+
+      for (const link of [...document.querySelectorAll('a[href*="/character/"]')]) {
+        const img = link.querySelector("img") as HTMLImageElement | null;
+        const thumbnailUrl = img?.currentSrc || img?.src || undefined;
+        const alt = img?.alt?.trim();
+        const cardText = (
+          link.closest("[role=button],article,figure,li,div")?.textContent ||
+          link.textContent ||
+          ""
+        )
+          .replace(/accessibility_new/g, " ")
+          .replace(/\s+/g, " ")
+          .trim();
+        const name = alt && !/generated image|user profile image/i.test(alt) ? alt : cardText;
+        if (!name || seen.has(name)) continue;
+        seen.add(name);
+        results.push(thumbnailUrl !== undefined && thumbnailUrl !== "" ? { name, thumbnailUrl } : { name });
+      }
+
+      if (results.length > 0) return results;
+
+      const tiles = [...document.querySelectorAll("[data-character-id],[role=listitem],figure")];
       for (const t of tiles) {
         const name = (t.querySelector("figcaption,[class*=name],h3,h4")?.textContent || "").trim();
         if (!name) continue;

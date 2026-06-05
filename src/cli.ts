@@ -35,6 +35,23 @@ function parseBrowserOption(value: string): BrowserChannel {
   return value as BrowserChannel;
 }
 
+function commandOption<T>(command: unknown, key: string): T | undefined {
+  if (command === null || typeof command !== "object") return undefined;
+  const record = command as Record<string, unknown>;
+  if (record[key] !== undefined) return record[key] as T;
+  const optsWithGlobals = record.optsWithGlobals;
+  if (typeof optsWithGlobals === "function") {
+    const value = (optsWithGlobals.call(command) as Record<string, unknown>)[key];
+    if (value !== undefined) return value as T;
+  }
+  const opts = record.opts;
+  if (typeof opts === "function") {
+    const value = (opts.call(command) as Record<string, unknown>)[key];
+    if (value !== undefined) return value as T;
+  }
+  return undefined;
+}
+
 // Read the CLI version from package.json so `--version` never drifts from the package.
 // Dev runs this file from src/ (package.json one level up); the build runs it from
 // dist/src/ (two levels up), so try both anchors relative to this module.
@@ -67,6 +84,20 @@ function withSessionOptions(command: Command): Command {
     .option("--browser <name>", "browser channel for Flow automation: chrome or chromium", parseBrowserOption, DEFAULT_BROWSER_CHANNEL)
     .option("--headed", "show browser", true)
     .option("--no-headed", "run browser headless");
+}
+
+function nestedSessionOptions(commandOptions: unknown, command: unknown): {
+  project?: string;
+  profile: string;
+  headed: boolean;
+  browser: BrowserChannel;
+} {
+  return {
+    project: commandOption<string>(command, "project") ?? commandOption<string>(commandOptions, "project"),
+    profile: commandOption<string>(command, "profile") ?? commandOption<string>(commandOptions, "profile") ?? "default",
+    headed: commandOption<boolean>(command, "headed") ?? commandOption<boolean>(commandOptions, "headed") ?? true,
+    browser: commandOption<BrowserChannel>(command, "browser") ?? commandOption<BrowserChannel>(commandOptions, "browser") ?? DEFAULT_BROWSER_CHANNEL
+  };
 }
 
 async function realCharacterAutomation(profile: string, headed: boolean, browser: BrowserChannel): Promise<{ automation: CharacterAutomation; close(): Promise<void> }> {
@@ -378,20 +409,21 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .option("--video-model <m>")
     .option("--video-ratio <r>")
     .option("--video-quantity <n>", "1-4", parseIntegerOption)
-    .action(async (command) => {
+    .action(async (commandOptions, command) => {
+      const sessionOptions = nestedSessionOptions(commandOptions, command);
       const spec = parseAgentSettings({
-        confirm: command.confirm,
-        imageModel: command.imageModel,
-        imageRatio: command.imageRatio,
-        imageQuantity: command.imageQuantity,
-        videoModel: command.videoModel,
-        videoRatio: command.videoRatio,
-        videoQuantity: command.videoQuantity,
-        project: command.project
+        confirm: commandOptions.confirm,
+        imageModel: commandOptions.imageModel,
+        imageRatio: commandOptions.imageRatio,
+        imageQuantity: commandOptions.imageQuantity,
+        videoModel: commandOptions.videoModel,
+        videoRatio: commandOptions.videoRatio,
+        videoQuantity: commandOptions.videoQuantity,
+        project: sessionOptions.project
       });
       const owned = options.agentAutomation
         ? { automation: options.agentAutomation, close: async () => undefined }
-        : await realAgentAutomation(command.profile, command.headed, command.browser);
+        : await realAgentAutomation(sessionOptions.profile, sessionOptions.headed, sessionOptions.browser);
       try {
         await owned.automation.applySettings(spec);
         console.log("agent settings saved");
@@ -404,11 +436,16 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
   withSessionOptions(instruction.command("add").description("Add a guideline, optionally with a project image as reference."))
     .requiredOption("--text <guideline>", "guideline text")
     .option("--ref <name>", "project image to use as reference")
-    .action(async (command) => {
-      const spec = parseAgentInstruction({ text: command.text, ref: command.ref, project: command.project });
+    .action(async (commandOptions, command) => {
+      const sessionOptions = nestedSessionOptions(commandOptions, command);
+      const spec = parseAgentInstruction({
+        text: commandOptions.text,
+        ref: commandOptions.ref,
+        project: sessionOptions.project
+      });
       const owned = options.agentAutomation
         ? { automation: options.agentAutomation, close: async () => undefined }
-        : await realAgentAutomation(command.profile, command.headed, command.browser);
+        : await realAgentAutomation(sessionOptions.profile, sessionOptions.headed, sessionOptions.browser);
       try {
         await owned.automation.addInstruction(spec);
         console.log("instruction added");
@@ -416,22 +453,24 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
         await owned.close();
       }
     });
-  withSessionOptions(instruction.command("list").description("List the agent's instructions.")).action(async (command) => {
+  withSessionOptions(instruction.command("list").description("List the agent's instructions.")).action(async (commandOptions, command) => {
+    const sessionOptions = nestedSessionOptions(commandOptions, command);
     const owned = options.agentAutomation
       ? { automation: options.agentAutomation, close: async () => undefined }
-      : await realAgentAutomation(command.profile, command.headed, command.browser);
+      : await realAgentAutomation(sessionOptions.profile, sessionOptions.headed, sessionOptions.browser);
     try {
-      for (const i of await owned.automation.listInstructions(command.project)) console.log(i.text);
+      for (const i of await owned.automation.listInstructions(sessionOptions.project)) console.log(i.text);
     } finally {
       await owned.close();
     }
   });
-  withSessionOptions(instruction.command("clear").description("Remove all agent instructions.")).action(async (command) => {
+  withSessionOptions(instruction.command("clear").description("Remove all agent instructions.")).action(async (commandOptions, command) => {
+    const sessionOptions = nestedSessionOptions(commandOptions, command);
     const owned = options.agentAutomation
       ? { automation: options.agentAutomation, close: async () => undefined }
-      : await realAgentAutomation(command.profile, command.headed, command.browser);
+      : await realAgentAutomation(sessionOptions.profile, sessionOptions.headed, sessionOptions.browser);
     try {
-      await owned.automation.clearInstructions(command.project);
+      await owned.automation.clearInstructions(sessionOptions.project);
       console.log("instructions cleared");
     } finally {
       await owned.close();

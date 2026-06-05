@@ -6,6 +6,44 @@ import { chromium } from "playwright";
 import { FlowPage } from "../src/flow/page.js";
 
 const FIXTURE = `file://${process.cwd()}/fixtures/flow/index.html`;
+const projectFixture = (label: string) => `<!doctype html>
+<html lang="en">
+  <body>
+    <main>
+      <div data-project="${label}" role="textbox" contenteditable="true"></div>
+      <button id="create" disabled>arrow_forwardCreate</button>
+      <section id="results"></section>
+    </main>
+    <script>
+      const prompt = document.querySelector('[role="textbox"]');
+      const create = document.getElementById("create");
+      prompt.addEventListener("input", () => { create.disabled = prompt.textContent.trim().length === 0; });
+      create.addEventListener("click", () => {
+        const img = document.createElement("img");
+        img.src = "data:text/plain," + document.querySelector('[data-project]').dataset.project;
+        img.style.width = "40px";
+        img.style.height = "40px";
+        img.addEventListener("click", () => {
+          const overlay = document.createElement("div");
+          overlay.setAttribute("role", "dialog");
+          overlay.innerHTML = '<button type="button" aria-haspopup="menu" data-dl>download Download</button><div role="menu" hidden><div role="menuitem" data-q="original">1K Original size</div></div>';
+          document.body.appendChild(overlay);
+          const menu = overlay.querySelector("[role=menu]");
+          overlay.querySelector("[data-dl]").addEventListener("click", () => { menu.hidden = false; });
+          overlay.querySelector("[role=menuitem]").addEventListener("click", () => {
+            const blob = new Blob([document.querySelector('[data-project]').dataset.project + ":original"], { type: "image/png" });
+            const a = document.createElement("a");
+            a.href = URL.createObjectURL(blob);
+            a.download = "project.png";
+            document.body.appendChild(a);
+            a.click();
+          });
+        });
+        document.getElementById("results").appendChild(img);
+      });
+    </script>
+  </body>
+</html>`;
 
 describe("FlowPage fixture", () => {
   it("types a prompt, submits, and downloads the generated result", async () => {
@@ -87,4 +125,48 @@ describe("FlowPage fixture", () => {
       await context.close();
     }
   });
+
+  it("navigates to the requested project before generating", async () => {
+    const profileDir = await mkdtemp(join(tmpdir(), "gflow-profile-"));
+    const outDir = await mkdtemp(join(tmpdir(), "gflow-output-"));
+    const context = await chromium.launchPersistentContext(profileDir, { headless: true, acceptDownloads: true });
+
+    try {
+      const page = context.pages()[0] ?? (await context.newPage());
+      const targetProjectId = "00000000-0000-4000-8000-000000000000";
+      await page.route("https://labs.google/fx/tools/flow", async (route) => {
+        await route.fulfill({
+          contentType: "text/html",
+          body: `<a href="/fx/tools/flow/project/${targetProjectId}"><span>Target Project</span></a>`
+        });
+      });
+      await page.route(`https://labs.google/fx/tools/flow/project/${targetProjectId}`, async (route) => {
+        await route.fulfill({ contentType: "text/html", body: projectFixture("target") });
+      });
+      await page.route("https://labs.google/fx/tools/flow/project/wrong", async (route) => {
+        await route.fulfill({ contentType: "text/html", body: projectFixture("wrong") });
+      });
+      await page.goto("https://labs.google/fx/tools/flow/project/wrong");
+
+      const flow = new FlowPage(page);
+      const result = await flow.runJob({
+        job: {
+          id: "project-image",
+          type: "image",
+          project: "Target Project",
+          prompt: "Use the requested project",
+          outputs: 1,
+          out: outDir,
+          ingredients: [],
+          character: []
+        },
+        outDir
+      });
+
+      expect(result.flowUrl).toContain(`/project/${targetProjectId}`);
+      await expect(readFile(result.artifacts[0]!.path, "utf8")).resolves.toBe("target:original");
+    } finally {
+      await context.close();
+    }
+  }, 30000);
 });

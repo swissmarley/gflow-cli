@@ -290,6 +290,29 @@ describe("CLI", () => {
     );
   });
 
+  it("passes --project to nested agent instruction list", async () => {
+    const agentAutomation: AgentAutomation = {
+      runAgent: vi.fn(async () => ({ jobId: "a1", artifacts: [], flowUrl: "" })),
+      applySettings: vi.fn(async () => undefined),
+      addInstruction: vi.fn(async () => undefined),
+      listInstructions: vi.fn(async () => []),
+      clearInstructions: vi.fn(async () => undefined)
+    };
+    const program = createProgram({ agentAutomation });
+
+    await program.parseAsync([
+      "node",
+      "gflow",
+      "agent",
+      "instruction",
+      "list",
+      "--project",
+      "Jun 05, 02:36 AM"
+    ]);
+
+    expect(agentAutomation.listInstructions).toHaveBeenCalledWith("Jun 05, 02:36 AM");
+  });
+
   it("passes --upscale and --character to the image job", async () => {
     let capturedJob: unknown;
     const automation: FlowAutomation = {
