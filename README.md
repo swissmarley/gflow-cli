@@ -35,11 +35,16 @@ browser session — no private APIs, no login bypass.
 `gflow` never spawns a hidden automation browser (Google challenges those with repeated 2FA).
 Instead:
 
-1. `gflow auth login` launches a **real Google Chrome** with a debugging port and leaves it open.
+1. `gflow auth login` opens a **plain Google Chrome** (no remote-debugging flags) so you can
+   sign in normally — Google blocks sign-in in browsers with remote debugging enabled
+   ("this browser or app may not be secure").
 2. You sign in once (including any 2FA) in that window.
-3. Every other command attaches to that exact window over the Chrome DevTools Protocol
-   (`connectOverCDP`), drives Flow's normal UI, and downloads results through Flow's own
-   authenticated media URLs.
+3. The first automation command (`doctor`, `image`, …) hands that window over to an
+   **automation session**: it reopens the same, now signed-in, profile with a debugging port
+   and attaches over the Chrome DevTools Protocol (`connectOverCDP`). It only ever loads Flow
+   with valid cookies — never the accounts sign-in page — so the block never applies.
+4. From then on, commands reuse that window, drive Flow's normal UI, and download results
+   through Flow's own authenticated media URLs.
 
 ## Requirements
 
@@ -75,10 +80,10 @@ export GFLOW_CHROME_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google 
 ## Quickstart
 
 ```bash
-# 1. Sign in (opens Chrome — complete login and leave the window open)
+# 1. Sign in (opens a plain Chrome — just complete the Google login)
 gflow auth login
 
-# 2. Verify the session
+# 2. Verify the session (reopens Chrome as an automation session)
 gflow doctor
 
 # 3. Generate
@@ -86,15 +91,18 @@ gflow image --id hero --prompt "minimal editorial product still" --out ./out
 gflow video --id reveal --prompt "slow dolly over a misty lake" --duration 8 --out ./out
 ```
 
-> Keep the Chrome window open between commands — it's your live session. If you close it, just
-> run `gflow auth login` again.
+> After `doctor`, keep the automation Chrome window open between commands — it's your live
+> session. If you close it, the next command reopens it from your saved login. If you ever get
+> signed out, run `gflow auth login` again.
 
 ## Commands
 
 ### `gflow auth login`
 
-Opens Chrome on the Flow page with an isolated profile (`.gflow/profiles/<name>`). Complete
-login and **leave the window open**.
+Opens a **plain** Chrome (no remote-debugging flags) on the Flow page with an isolated profile
+(`.gflow/profiles/<name>`). Complete the Google login here — signing in must happen in an
+ordinary window, or Google rejects it as "not secure". The next command takes the session over
+for automation.
 
 | Option | Default | Description |
 | --- | --- | --- |
@@ -188,8 +196,10 @@ Use `--profile <name>` across commands to keep separate logged-in sessions.
 
 ## Troubleshooting
 
-- **"Google Flow login is required"** — run `gflow auth login`, finish signing in, and leave the
-  window open before re-running.
+- **"Couldn't sign you in — this browser or app may not be secure"** — make sure you sign in via
+  `gflow auth login` (a plain window), not by reopening the automation window. Sign-in must
+  happen in a browser without remote debugging. Update to the latest version if you still hit it.
+- **"Google Flow login is required"** — run `gflow auth login`, finish signing in, then re-run.
 - **Chrome won't start / wrong path** — set `GFLOW_CHROME_PATH`.
 - **A generation step can't find a control** — Flow's UI changes over time; open an issue with the
   command you ran.

@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { Command, CommanderError, InvalidArgumentError } from "commander";
-import { BROWSER_CHANNELS, DEFAULT_BROWSER_CHANNEL, launchDebuggableChrome, openBrowserSession, type BrowserChannel } from "./browser/session.js";
+import { BROWSER_CHANNELS, DEFAULT_BROWSER_CHANNEL, launchLoginChrome, openBrowserSession, type BrowserChannel } from "./browser/session.js";
 import { exitCodeForError, messageForError } from "./errors.js";
 import { FlowPage } from "./flow/page.js";
 import type { FlowAutomation } from "./flow/types.js";
@@ -47,12 +47,13 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .command("login")
     .option("--profile <name>", "browser profile name", "default")
     .action(async (command: { profile: string }) => {
-      // Launch the real Chrome with a debugging port and leave it open. Subsequent
-      // commands attach to this exact window over CDP, so Google sees one continuous
-      // human session instead of an automated browser to challenge.
-      const plan = await launchDebuggableChrome(command.profile, true);
-      console.log(`Opened Google Chrome for login with profile: ${plan.profileDir}`);
-      console.log("Complete login in that window and leave it open, then run `gflow doctor`.");
+      // Launch a plain Chrome (no remote-debugging port) for sign-in. Google blocks sign-in
+      // in browsers with remote debugging enabled ("this browser or app may not be secure"),
+      // so login must happen in an ordinary window. Automation commands then reattach to this
+      // profile with a debugging port once it is already signed in.
+      const profileDir = await launchLoginChrome(command.profile);
+      console.log(`Opened Google Chrome for login with profile: ${profileDir}`);
+      console.log("Complete login in that window, then run `gflow doctor` (gflow reopens Chrome for automation).");
     });
 
   program

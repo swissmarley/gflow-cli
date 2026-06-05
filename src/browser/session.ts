@@ -229,6 +229,25 @@ export async function launchDebuggableChrome(profile: string, headed: boolean): 
   return { profileDir, port };
 }
 
+// Launch a plain Chrome for interactive Google sign-in — deliberately WITHOUT
+// --remote-debugging-port (and without --remote-allow-origins). Google's sign-in page blocks
+// browsers with remote debugging enabled ("this browser or app may not be secure"), which is
+// enforced on untrusted devices. Automation later reattaches to this same profile with a
+// debugging port, by which point the session is signed in and never revisits the accounts
+// sign-in page. Returns the profile directory.
+export async function launchLoginChrome(profile: string): Promise<string> {
+  const profileDir = resolveProfileDir(profile);
+  await mkdir(profileDir, { recursive: true });
+  // Clear any stale debug-port marker from a previous automation session so the next
+  // automation command knows this plain window has no debugging port.
+  await rm(join(profileDir, "DevToolsActivePort"), { force: true });
+
+  const args = [`--user-data-dir=${profileDir}`, "--no-first-run", "--no-default-browser-check", FLOW_URL];
+  const child = spawn(resolveChromeExecutable(), args, { detached: true, stdio: "ignore" });
+  child.unref();
+  return profileDir;
+}
+
 function pickFlowPage(context: BrowserContext): Page | undefined {
   return context.pages().find((page) => page.url().includes("labs.google"));
 }
@@ -256,25 +275,38 @@ export async function openBrowserSession(options: BrowserSessionOptions): Promis
     return openChromiumSession(options, profileDir);
   }
 
-  // Reattach to the Chrome the user logged into if it is still running; otherwise start
-  // one and leave it open. Either way we drive the genuine session over CDP.
-  const running = (await findChromeProcessesForProfile(profileDir)).length > 0;
-  const existingPort = running ? await readDevToolsPort(profileDir) : undefined;
-  const port = existingPort ?? (await launchDebuggableChrome(options.profile, options.headed)).port;
+  const connect = (port: number): Promise<Browser> => chromium.connectOverCDP(`http://127.0.0.1:${port}`);
+  const running = await findChromeProcessesForProfile(profileDir);
+  const existingPort = running.length > 0 ? await readDevToolsPort(profileDir) : undefined;
 
-  let browser: Browser;
-  try {
-    browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
-  } catch (error) {
-    throw new Error(
-      [
-        `Could not connect to the gflow Chrome session on port ${port}.`,
-        "Run `gflow auth login`, complete login, leave that Chrome window open, then run this command again.",
-        error instanceof Error ? `(${error.message})` : ""
-      ]
-        .filter(Boolean)
-        .join(" ")
-    );
+  let browser: Browser | undefined;
+
+  // Reuse an automation (debug-port) Chrome from a previous command if one is reachable.
+  if (existingPort !== undefined) {
+    browser = await connect(existingPort).catch(() => undefined);
+  }
+
+  // Otherwise take the profile over with a debug-port Chrome. If a plain sign-in window is
+  // holding the profile, close it first (its cookies are flushed on a graceful quit) so the
+  // automation Chrome can open the same, now signed-in, profile.
+  if (!browser) {
+    if (running.length > 0) {
+      console.error("gflow: handing the sign-in window over to an automation session…");
+      await closeChromeForProfile(profileDir);
+      await clearStaleSingletonLock(profileDir);
+    }
+    const launched = await launchDebuggableChrome(options.profile, options.headed);
+    browser = await connect(launched.port).catch((error: unknown) => {
+      throw new Error(
+        [
+          `Could not connect to the gflow Chrome session on port ${launched.port}.`,
+          "Run `gflow auth login`, complete login, then run this command again.",
+          error instanceof Error ? `(${error.message})` : ""
+        ]
+          .filter(Boolean)
+          .join(" ")
+      );
+    });
   }
 
   const context = browser.contexts()[0] ?? (await browser.newContext());
