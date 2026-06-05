@@ -3,14 +3,16 @@ import { resolve } from "node:path";
 import { Command, CommanderError, InvalidArgumentError } from "commander";
 import { BROWSER_CHANNELS, DEFAULT_BROWSER_CHANNEL, launchLoginChrome, openBrowserSession, type BrowserChannel } from "./browser/session.js";
 import { exitCodeForError, messageForError } from "./errors.js";
-import { FlowPage } from "./flow/page.js";
-import type { FlowAutomation } from "./flow/types.js";
-import { parseBatchYaml, parseImageJob, parseVideoJob } from "./jobs/schema.js";
+import { FlowPage, FLOW_URL } from "./flow/page.js";
+import type { CharacterAutomation, FlowAutomation } from "./flow/types.js";
+import { CharacterPage } from "./flow/characters.js";
+import { parseBatchYaml, parseCharacter, parseImageJob, parseVideoJob } from "./jobs/schema.js";
 import { runJobs } from "./jobs/runner.js";
 import { resolveOutputDir } from "./config/paths.js";
 
 export interface CreateProgramOptions {
   automation?: FlowAutomation;
+  characterAutomation?: CharacterAutomation;
 }
 
 function parseIntegerOption(value: string): number {
@@ -35,6 +37,21 @@ async function realAutomation(profile: string, headed: boolean, browser: Browser
     automation: flow,
     close: () => session.close()
   };
+}
+
+function withSessionOptions(command: Command): Command {
+  return command
+    .option("--project <name>", "Flow project")
+    .option("--profile <name>", "browser profile name", "default")
+    .option("--browser <name>", "browser channel for Flow automation: chrome or chromium", parseBrowserOption, DEFAULT_BROWSER_CHANNEL)
+    .option("--headed", "show browser", true)
+    .option("--no-headed", "run browser headless");
+}
+
+async function realCharacterAutomation(profile: string, headed: boolean, browser: BrowserChannel): Promise<{ automation: CharacterAutomation; close(): Promise<void> }> {
+  const session = await openBrowserSession({ profile, headed, browser });
+  await session.page.goto(FLOW_URL, { waitUntil: "domcontentloaded" }).catch(() => undefined);
+  return { automation: new CharacterPage(session.page), close: () => session.close() };
 }
 
 export function createProgram(options: CreateProgramOptions = {}): Command {
@@ -200,6 +217,52 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
         await owned.close();
       }
     });
+
+  const character = program.command("character").description("Create and manage Flow characters.");
+  withSessionOptions(character.command("create"))
+    .requiredOption("--prompt <text>", "character description")
+    .option("--name <name>", "character name")
+    .option("--model <model>", "nano-banana-2 or nano-banana-pro", (v) => {
+      if (!["nano-banana-2", "nano-banana-pro"].includes(v)) throw new InvalidArgumentError("must be nano-banana-2 or nano-banana-pro");
+      return v;
+    })
+    .option("--preset <preset>", "familiar|eccentric|wicked|fantastical")
+    .option("--image <path...>", "reference image(s) to upload")
+    .option("--from-project <name...>", "reference asset name(s) from the project")
+    .option("--out <path>", "output directory", "./gflow-output")
+    .action(async (command) => {
+      const spec = parseCharacter({
+        prompt: command.prompt,
+        name: command.name,
+        model: command.model,
+        preset: command.preset,
+        images: (command.image ?? []).map((p: string) => resolve(process.cwd(), p)),
+        fromProject: command.fromProject ?? [],
+        project: command.project,
+        out: command.out
+      });
+      const owned = options.characterAutomation
+        ? { automation: options.characterAutomation, close: async () => undefined }
+        : await realCharacterAutomation(command.profile, command.headed, command.browser);
+      try {
+        const result = await owned.automation.createCharacter({ ...spec, outDir: resolveOutputDir(spec.out) });
+        console.log(`character created: ${result.name}`);
+        if (result.thumbnailPath) console.log(`saved ${result.thumbnailPath}`);
+      } finally {
+        await owned.close();
+      }
+    });
+
+  withSessionOptions(character.command("list")).action(async (command) => {
+    const owned = options.characterAutomation
+      ? { automation: options.characterAutomation, close: async () => undefined }
+      : await realCharacterAutomation(command.profile, command.headed, command.browser);
+    try {
+      for (const c of await owned.automation.listCharacters(command.project)) console.log(c.name);
+    } finally {
+      await owned.close();
+    }
+  });
 
   program.configureOutput({
     writeErr: (text) => process.stderr.write(text)

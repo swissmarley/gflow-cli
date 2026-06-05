@@ -1,5 +1,6 @@
+import { resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import type { FlowAutomation } from "../src/flow/types.js";
+import type { CharacterAutomation, FlowAutomation } from "../src/flow/types.js";
 import { createProgram, runCli } from "../src/cli.js";
 
 describe("CLI", () => {
@@ -124,6 +125,43 @@ describe("CLI", () => {
     ).rejects.toMatchObject({
       code: "commander.invalidArgument"
     });
+  });
+
+  it("calls createCharacter with resolved image paths and parsed options", async () => {
+    const characterAutomation: CharacterAutomation = {
+      createCharacter: vi.fn(async () => ({
+        name: "test-character",
+        thumbnailPath: undefined,
+        flowUrl: "https://labs.google/fx/tools/flow/characters"
+      })),
+      listCharacters: vi.fn(async () => [])
+    };
+    const program = createProgram({ characterAutomation });
+
+    await program.parseAsync([
+      "node",
+      "gflow",
+      "character",
+      "create",
+      "--prompt",
+      "x",
+      "--model",
+      "nano-banana-pro",
+      "--image",
+      "./a.png"
+    ]);
+
+    expect(characterAutomation.createCharacter).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt: "x",
+        model: "nano-banana-pro",
+        images: expect.arrayContaining([
+          expect.stringMatching(/\/a\.png$/)
+        ])
+      })
+    );
+    const call = vi.mocked(characterAutomation.createCharacter).mock.calls[0]?.[0];
+    expect(call?.images[0]).toBe(resolve(process.cwd(), "./a.png"));
   });
 
   it("passes --upscale and --character to the image job", async () => {
