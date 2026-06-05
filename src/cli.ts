@@ -4,10 +4,11 @@ import { Command, CommanderError, InvalidArgumentError } from "commander";
 import { BROWSER_CHANNELS, DEFAULT_BROWSER_CHANNEL, launchLoginChrome, openBrowserSession, type BrowserChannel } from "./browser/session.js";
 import { exitCodeForError, messageForError } from "./errors.js";
 import { FlowPage, FLOW_URL } from "./flow/page.js";
-import type { CharacterAutomation, FlowAutomation, ToolAutomation } from "./flow/types.js";
+import type { AgentAutomation, CharacterAutomation, FlowAutomation, ToolAutomation } from "./flow/types.js";
+import { AgentPage } from "./flow/agent.js";
 import { CharacterPage } from "./flow/characters.js";
 import { ToolPage } from "./flow/tools.js";
-import { parseBatchYaml, parseCharacter, parseImageJob, parseTool, parseVideoJob } from "./jobs/schema.js";
+import { parseAgentInstruction, parseAgentRun, parseAgentSettings, parseBatchYaml, parseCharacter, parseImageJob, parseTool, parseVideoJob } from "./jobs/schema.js";
 import { runJobs } from "./jobs/runner.js";
 import { resolveOutputDir } from "./config/paths.js";
 
@@ -15,6 +16,7 @@ export interface CreateProgramOptions {
   automation?: FlowAutomation;
   characterAutomation?: CharacterAutomation;
   toolAutomation?: ToolAutomation;
+  agentAutomation?: AgentAutomation;
 }
 
 function parseIntegerOption(value: string): number {
@@ -60,6 +62,12 @@ async function realToolAutomation(profile: string, headed: boolean, browser: Bro
   const session = await openBrowserSession({ profile, headed, browser });
   await session.page.goto(FLOW_URL, { waitUntil: "domcontentloaded" }).catch(() => undefined);
   return { automation: new ToolPage(session.page), close: () => session.close() };
+}
+
+async function realAgentAutomation(profile: string, headed: boolean, browser: BrowserChannel): Promise<{ automation: AgentAutomation; close(): Promise<void> }> {
+  const session = await openBrowserSession({ profile, headed, browser });
+  await session.page.goto(FLOW_URL, { waitUntil: "domcontentloaded" }).catch(() => undefined);
+  return { automation: new AgentPage(session.page), close: () => session.close() };
 }
 
 export function createProgram(options: CreateProgramOptions = {}): Command {
@@ -314,6 +322,99 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
         await owned.close();
       }
     });
+
+  const agent = program.command("agent").description("Run and configure the Flow Agent.");
+  withSessionOptions(agent)
+    .option("--prompt <text>", "agent prompt")
+    .option("--id <id>", "job id for outputs", "agent")
+    .option("--out <path>", "output directory", "./gflow-output")
+    .action(async (command) => {
+      if (!command.prompt) {
+        agent.help();
+        return;
+      }
+      const spec = parseAgentRun({ id: command.id, prompt: command.prompt, project: command.project, out: command.out });
+      const owned = options.agentAutomation
+        ? { automation: options.agentAutomation, close: async () => undefined }
+        : await realAgentAutomation(command.profile, command.headed, command.browser);
+      try {
+        const r = await owned.automation.runAgent({ ...spec, outDir: resolveOutputDir(spec.out) });
+        for (const a of r.artifacts) console.log(`saved ${a.path}`);
+      } finally {
+        await owned.close();
+      }
+    });
+
+  withSessionOptions(agent.command("settings"))
+    .option("--confirm <mode>", "always or never", (v) => {
+      if (!["always", "never"].includes(v)) throw new InvalidArgumentError("must be always or never");
+      return v;
+    })
+    .option("--image-model <m>")
+    .option("--image-ratio <r>")
+    .option("--image-quantity <n>", "1-4", parseIntegerOption)
+    .option("--video-model <m>")
+    .option("--video-ratio <r>")
+    .option("--video-quantity <n>", "1-4", parseIntegerOption)
+    .action(async (command) => {
+      const spec = parseAgentSettings({
+        confirm: command.confirm,
+        imageModel: command.imageModel,
+        imageRatio: command.imageRatio,
+        imageQuantity: command.imageQuantity,
+        videoModel: command.videoModel,
+        videoRatio: command.videoRatio,
+        videoQuantity: command.videoQuantity,
+        project: command.project
+      });
+      const owned = options.agentAutomation
+        ? { automation: options.agentAutomation, close: async () => undefined }
+        : await realAgentAutomation(command.profile, command.headed, command.browser);
+      try {
+        await owned.automation.applySettings(spec);
+        console.log("agent settings saved");
+      } finally {
+        await owned.close();
+      }
+    });
+
+  const instruction = agent.command("instruction").description("Manage agent instructions.");
+  withSessionOptions(instruction.command("add"))
+    .requiredOption("--text <guideline>", "guideline text")
+    .option("--ref <name>", "project image to use as reference")
+    .action(async (command) => {
+      const spec = parseAgentInstruction({ text: command.text, ref: command.ref, project: command.project });
+      const owned = options.agentAutomation
+        ? { automation: options.agentAutomation, close: async () => undefined }
+        : await realAgentAutomation(command.profile, command.headed, command.browser);
+      try {
+        await owned.automation.addInstruction(spec);
+        console.log("instruction added");
+      } finally {
+        await owned.close();
+      }
+    });
+  withSessionOptions(instruction.command("list")).action(async (command) => {
+    const owned = options.agentAutomation
+      ? { automation: options.agentAutomation, close: async () => undefined }
+      : await realAgentAutomation(command.profile, command.headed, command.browser);
+    try {
+      for (const i of await owned.automation.listInstructions(command.project)) console.log(i.text);
+    } finally {
+      await owned.close();
+    }
+  });
+  withSessionOptions(instruction.command("clear")).action(async (command) => {
+    const owned = options.agentAutomation
+      ? { automation: options.agentAutomation, close: async () => undefined }
+      : await realAgentAutomation(command.profile, command.headed, command.browser);
+    try {
+      await owned.automation.clearInstructions(command.project);
+      console.log("instructions cleared");
+    } finally {
+      await owned.close();
+    }
+  });
 
   program.configureOutput({
     writeErr: (text) => process.stderr.write(text)

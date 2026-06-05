@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import type { CharacterAutomation, FlowAutomation, ToolAutomation } from "../src/flow/types.js";
+import type { AgentAutomation, CharacterAutomation, FlowAutomation, ToolAutomation } from "../src/flow/types.js";
 import { createProgram, runCli } from "../src/cli.js";
 
 describe("CLI", () => {
@@ -208,6 +208,86 @@ describe("CLI", () => {
     await program.parseAsync(["node", "gflow", "tool", "list"]);
 
     expect(toolAutomation.listTools).toHaveBeenCalled();
+  });
+
+  it("calls runAgent with id and prompt", async () => {
+    const agentAutomation: AgentAutomation = {
+      runAgent: vi.fn(async () => ({ jobId: "a1", artifacts: [], flowUrl: "" })),
+      applySettings: vi.fn(async () => undefined),
+      addInstruction: vi.fn(async () => undefined),
+      listInstructions: vi.fn(async () => []),
+      clearInstructions: vi.fn(async () => undefined)
+    };
+    const program = createProgram({ agentAutomation });
+
+    await program.parseAsync([
+      "node",
+      "gflow",
+      "agent",
+      "--prompt",
+      "make a teaser",
+      "--id",
+      "a1"
+    ]);
+
+    expect(agentAutomation.runAgent).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "a1", prompt: "make a teaser" })
+    );
+  });
+
+  it("calls applySettings with parsed agent settings", async () => {
+    const agentAutomation: AgentAutomation = {
+      runAgent: vi.fn(async () => ({ jobId: "a1", artifacts: [], flowUrl: "" })),
+      applySettings: vi.fn(async () => undefined),
+      addInstruction: vi.fn(async () => undefined),
+      listInstructions: vi.fn(async () => []),
+      clearInstructions: vi.fn(async () => undefined)
+    };
+    const program = createProgram({ agentAutomation });
+
+    await program.parseAsync([
+      "node",
+      "gflow",
+      "agent",
+      "settings",
+      "--confirm",
+      "never",
+      "--image-quantity",
+      "2",
+      "--video-ratio",
+      "9:16"
+    ]);
+
+    expect(agentAutomation.applySettings).toHaveBeenCalledWith(
+      expect.objectContaining({ confirm: "never", imageQuantity: 2, videoRatio: "9:16" })
+    );
+  });
+
+  it("calls addInstruction with text and ref", async () => {
+    const agentAutomation: AgentAutomation = {
+      runAgent: vi.fn(async () => ({ jobId: "a1", artifacts: [], flowUrl: "" })),
+      applySettings: vi.fn(async () => undefined),
+      addInstruction: vi.fn(async () => undefined),
+      listInstructions: vi.fn(async () => []),
+      clearInstructions: vi.fn(async () => undefined)
+    };
+    const program = createProgram({ agentAutomation });
+
+    await program.parseAsync([
+      "node",
+      "gflow",
+      "agent",
+      "instruction",
+      "add",
+      "--text",
+      "cinematic",
+      "--ref",
+      "Hero"
+    ]);
+
+    expect(agentAutomation.addInstruction).toHaveBeenCalledWith(
+      expect.objectContaining({ text: "cinematic", ref: "Hero" })
+    );
   });
 
   it("passes --upscale and --character to the image job", async () => {
