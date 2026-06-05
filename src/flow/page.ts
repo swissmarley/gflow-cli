@@ -1,6 +1,5 @@
-import { mkdir, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
-import type { BrowserContext, Page } from "playwright";
+import { join } from "node:path";
+import type { Page } from "playwright";
 import {
   CreditLimitError,
   GenerationBlockedError,
@@ -9,7 +8,8 @@ import {
   ManualActionRequiredError,
   RateLimitedError
 } from "../errors.js";
-import { createArtifactPlan, writeArtifactMetadata } from "../output/artifacts.js";
+import { artifactBasename, writeArtifactMetadata } from "../output/artifacts.js";
+import { downloadResult, type DownloadQuality } from "./download.js";
 import type { GFlowJob } from "../jobs/schema.js";
 import type { FlowAutomation, FlowAutomationRunInput, FlowJobResult } from "./types.js";
 import { flowLocators } from "./locators.js";
@@ -27,36 +27,6 @@ const RATIO_ICON: Record<string, string> = {
   "3:4": "crop_portrait"
 };
 
-interface FetchedMedia {
-  bytes: Buffer;
-  contentType: string | undefined;
-}
-
-// Result media are served from authenticated URLs like
-// labs.google/fx/api/trpc/media.getMediaUrlRedirect?name=<uuid>. Fetching them through the
-// logged-in browser context returns the real bytes; an in-page fetch() returns the SPA HTML.
-async function fetchMedia(context: BrowserContext, src: string): Promise<FetchedMedia> {
-  if (src.startsWith("data:")) {
-    const comma = src.indexOf(",");
-    const meta = src.slice(5, comma);
-    const payload = src.slice(comma + 1);
-    const bytes = meta.includes("base64") ? Buffer.from(payload, "base64") : Buffer.from(decodeURIComponent(payload), "utf8");
-    return { bytes, contentType: meta.split(";")[0] || undefined };
-  }
-  const response = await context.request.get(src);
-  if (!response.ok()) {
-    throw new GenerationFailedError(`Failed to download a result (HTTP ${response.status()}).`);
-  }
-  return { bytes: Buffer.from(await response.body()), contentType: response.headers()["content-type"] };
-}
-
-function extensionFor(type: "image" | "video", contentType: string | undefined): string {
-  if (contentType?.includes("jpeg")) return ".jpg";
-  if (contentType?.includes("png")) return ".png";
-  if (contentType?.includes("webp")) return ".webp";
-  if (contentType?.includes("mp4") || contentType?.includes("video")) return ".mp4";
-  return type === "video" ? ".mp4" : ".png";
-}
 
 export class FlowPage implements FlowAutomation {
   constructor(private readonly page: Page, private readonly flowUrl = FLOW_URL) {}
@@ -112,18 +82,21 @@ export class FlowPage implements FlowAutomation {
     const newSrcs = await this.waitForResults(before, input.job.outputs, generationTimeoutSeconds * 1000, input.job.type);
 
     const context = this.page.context();
+    const quality: DownloadQuality = input.job.upscale ?? "original";
     const artifacts = [];
     for (let index = 0; index < Math.min(input.job.outputs, newSrcs.length); index += 1) {
-      const media = await fetchMedia(context, newSrcs[index]);
-      const plan = createArtifactPlan({
+      const basename = artifactBasename(input.job.id, index + 1);
+      const { assetPath } = await downloadResult({
+        page: this.page,
+        context,
+        src: newSrcs[index],
+        type: input.job.type,
+        quality,
         outDir: input.outDir,
-        jobId: input.job.id,
-        index: index + 1,
-        extension: extensionFor(input.job.type, media.contentType)
+        basename
       });
-      await mkdir(dirname(plan.assetPath), { recursive: true });
-      await writeFile(plan.assetPath, media.bytes);
-      await writeArtifactMetadata(plan.metadataPath, {
+      const metadataPath = join(input.outDir, `${basename}.json`);
+      await writeArtifactMetadata(metadataPath, {
         jobId: input.job.id,
         type: input.job.type,
         prompt: input.job.prompt,
@@ -132,12 +105,14 @@ export class FlowPage implements FlowAutomation {
         ratio: input.job.ratio,
         duration: input.job.type === "video" ? input.job.duration : undefined,
         requestedOutputs: input.job.outputs,
+        quality,
+        characters: input.job.character?.length ? input.job.character : undefined,
         downloadedAt: new Date().toISOString(),
         source: "google-flow-browser",
         flowUrl: this.page.url(),
         status: "downloaded"
       });
-      artifacts.push({ path: plan.assetPath, metadataPath: plan.metadataPath });
+      artifacts.push({ path: assetPath, metadataPath });
     }
 
     if (artifacts.length === 0) {

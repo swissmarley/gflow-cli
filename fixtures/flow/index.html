@@ -13,6 +13,37 @@
       <section id="results"></section>
     </main>
     <script>
+      function gflowAttachViewer(tile, mediaName, isVideo) {
+        tile.style.cursor = "pointer";
+        tile.addEventListener("click", () => {
+          if (document.querySelector('[role=dialog] [data-dl]')) return; // one viewer at a time
+          const overlay = document.createElement("div");
+          overlay.setAttribute("role", "dialog");
+          overlay.innerHTML = `
+            <button type="button" aria-haspopup="menu" data-dl>download Download</button>
+            <div role="menu" hidden>
+              <div role="menuitem" data-q="original">1K Original size</div>
+              <div role="menuitem" data-q="2k">2K Upscaled</div>
+              <div role="menuitem" data-q="4k">4K Upscaled Upgrade</div>
+            </div>`;
+          document.body.appendChild(overlay);
+          const btn = overlay.querySelector("[data-dl]");
+          const menu = overlay.querySelector("[role=menu]");
+          btn.addEventListener("click", () => { menu.hidden = false; });
+          overlay.querySelectorAll("[role=menuitem]").forEach((item) => {
+            item.addEventListener("click", () => {
+              if (item.dataset.q === "4k") return; // gated
+              const blob = new Blob([new Uint8Array([1, 2, 3, 4])], { type: isVideo ? "video/mp4" : "image/png" });
+              const a = document.createElement("a");
+              a.href = URL.createObjectURL(blob);
+              a.download = mediaName + (isVideo ? ".mp4" : ".png");
+              document.body.appendChild(a);
+              a.click();
+            });
+          });
+        });
+      }
+
       const params = new URLSearchParams(window.location.search);
       const delay = Number(params.get("delay") ?? "0");
       const prompt = document.getElementById("prompt");
@@ -33,6 +64,7 @@
           // so the same context-fetch download path can read the bytes offline.
           img.src = `data:text/plain,fixture generation ${currentGeneration}`;
           document.getElementById("results").appendChild(img);
+          gflowAttachViewer(img, `fixture-gen-${currentGeneration}`, false);
         }, delay);
       });
     </script>
