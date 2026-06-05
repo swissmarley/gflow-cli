@@ -13,7 +13,7 @@ import { downloadResult, type DownloadQuality } from "./download.js";
 import type { GFlowJob } from "../jobs/schema.js";
 import type { FlowAutomation, FlowAutomationRunInput, FlowJobResult } from "./types.js";
 import { flowLocators } from "./locators.js";
-import { pickOption, pickModel, confirmPicker } from "./ui.js";
+import { addFromProject, pickOption, pickModel, confirmPicker } from "./ui.js";
 
 export const FLOW_URL = "https://labs.google/fx/tools/flow";
 
@@ -72,6 +72,10 @@ export class FlowPage implements FlowAutomation {
 
     if ((await locators.promptBox.count()) === 0) {
       throw new GenerationFailedError("Could not find the Flow prompt box. Open or create a project first.");
+    }
+
+    for (const name of input.job.character ?? []) {
+      await this.referenceCharacter(name);
     }
 
     const before = new Set(await this.resultSrcs(input.job.type));
@@ -214,6 +218,13 @@ export class FlowPage implements FlowAutomation {
     });
 
     await confirmPicker(this.page, dialog);
+  }
+
+  // Reference a saved character in the current generation. VERIFY LIVE (later): the exact
+  // control that opens the character/ingredient picker in the generation bar, and whether
+  // the picker has a "Characters" tab to select within.
+  private async referenceCharacter(name: string): Promise<void> {
+    await addFromProject(this.page, /add media|ingredient|character|add_2/i, name).catch(() => undefined);
   }
 
   private async fillPrompt(prompt: string): Promise<void> {
