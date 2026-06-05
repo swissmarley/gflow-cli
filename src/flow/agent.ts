@@ -60,10 +60,11 @@ export class AgentPage implements AgentAutomation {
     await pickOption(this.page, /Add instruction/);
     await this.page.waitForTimeout(400);
     if (input.ref) await addFromProject(this.page, /Add Image|Reference/i, input.ref);
-    // The guideline field is the editable element near the "Create a guideline..." placeholder.
-    const field = this.page.locator('[role="textbox"][contenteditable="true"]').last();
+    // Live verification confirmed: the guideline field is a <textarea> with
+    // placeholder="Create a guideline for your agent" (not a contenteditable div).
+    const field = this.page.locator('textarea[placeholder="Create a guideline for your agent"]').last();
     await field.click().catch(() => undefined);
-    await field.pressSequentially(input.text, { delay: 8 }).catch(() => undefined);
+    await field.fill(input.text).catch(() => undefined);
     await pickOption(this.page, /^Done$/);
     await this.page.waitForTimeout(300);
   }
@@ -72,12 +73,11 @@ export class AgentPage implements AgentAutomation {
     await this.openAgent(project);
     await pickOption(this.page, /article_sparkAgent Instructions/);
     await this.page.waitForTimeout(400);
-    // VERIFY LIVE: instruction-row text/ref structure.
+    // Live verified: guideline fields are <textarea> with the "Create a guideline" placeholder.
     return this.page.evaluate(() =>
-      [...document.querySelectorAll('[role=textbox][contenteditable=true]')]
-        .map((e) => (e.textContent ?? "").trim())
-        .filter((t) => t.length > 0 && !/What do you want to create/i.test(t))
-        .map((text) => ({ text, hasRef: false }))
+      [...document.querySelectorAll('textarea[placeholder="Create a guideline for your agent"]')]
+        .map((e) => ({ text: (e as HTMLTextAreaElement).value.trim(), hasRef: false }))
+        .filter((row) => row.text.length > 0)
     );
   }
 

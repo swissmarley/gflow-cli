@@ -13,7 +13,7 @@ import { downloadResult, type DownloadQuality } from "./download.js";
 import type { GFlowJob } from "../jobs/schema.js";
 import type { FlowAutomation, FlowAutomationRunInput, FlowJobResult } from "./types.js";
 import { flowLocators } from "./locators.js";
-import { addFromProject, pickOption, pickModel, confirmPicker } from "./ui.js";
+import { pickOption, pickModel, confirmPicker, navigateToProject } from "./ui.js";
 
 export const FLOW_URL = "https://labs.google/fx/tools/flow";
 
@@ -61,7 +61,12 @@ export class FlowPage implements FlowAutomation {
 
   async runJob(input: FlowAutomationRunInput): Promise<FlowJobResult> {
     const locators = flowLocators(this.page);
-    await this.ensureProject();
+    if (input.job.project) {
+      await navigateToProject(this.page, input.job.project);
+      await locators.promptBox.first().waitFor({ state: "visible", timeout: 20000 }).catch(() => undefined);
+    } else {
+      await this.ensureProject();
+    }
     await this.assertReady();
     await this.applySettings(input.job);
 
@@ -220,11 +225,32 @@ export class FlowPage implements FlowAutomation {
     await confirmPicker(this.page, dialog);
   }
 
-  // Reference a saved character in the current generation. VERIFY LIVE (later): the exact
-  // control that opens the character/ingredient picker in the generation bar, and whether
-  // the picker has a "Characters" tab to select within.
+  // Reference a saved character in the current generation.
+  // Live-verified: the "add_2 Create" button opens a media-picker dialog with a
+  // "Characters" tab; we click the tab, pick the named tile, then confirm.
   private async referenceCharacter(name: string): Promise<void> {
-    await addFromProject(this.page, /add media|ingredient|character|add_2/i, name).catch(() => undefined);
+    // Open the ingredient picker (aria-haspopup="dialog", text "add_2Create")
+    const addBtn = this.page.locator('button[aria-haspopup="dialog"]').filter({ hasText: /add_2/i }).first();
+    if ((await addBtn.count()) === 0) return;
+    await addBtn.click().catch(() => undefined);
+
+    const dialog = this.page.locator("[role=dialog],[aria-modal=true]").first();
+    await dialog.waitFor({ state: "visible", timeout: 10000 }).catch(() => undefined);
+
+    // Switch to the Characters tab
+    const charsTab = dialog.locator("button,[role=tab]").filter({ hasText: /Characters/i }).first();
+    await charsTab.click().catch(() => undefined);
+    await this.page.waitForTimeout(400);
+
+    // Pick the tile by name
+    const tile = dialog.getByText(name, { exact: true }).first();
+    await tile.waitFor({ state: "visible", timeout: 10000 }).catch(() => undefined);
+    await tile.click().catch(() => undefined);
+
+    // Confirm
+    const confirm = dialog.locator("button").filter({ hasText: /add to prompt/i }).first();
+    await confirm.click().catch(() => undefined);
+    await dialog.waitFor({ state: "hidden", timeout: 10000 }).catch(() => undefined);
   }
 
   private async fillPrompt(prompt: string): Promise<void> {
