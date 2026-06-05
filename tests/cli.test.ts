@@ -125,4 +125,39 @@ describe("CLI", () => {
       code: "commander.invalidArgument"
     });
   });
+
+  it("passes --upscale and --character to the image job", async () => {
+    let capturedJob: unknown;
+    const automation: FlowAutomation = {
+      runJob: vi.fn(async (input) => {
+        capturedJob = input.job;
+        return {
+          jobId: input.job.id,
+          artifacts: [],
+          flowUrl: "https://labs.google/fx/tools/flow"
+        };
+      })
+    };
+    const program = createProgram({ automation });
+
+    await program.parseAsync([
+      "node",
+      "gflow",
+      "image",
+      "--id",
+      "x",
+      "--prompt",
+      "p",
+      "--upscale",
+      "2k",
+      "--character",
+      "Nyra"
+    ]);
+
+    expect(automation.runJob).toHaveBeenCalled();
+    expect(capturedJob).toMatchObject({
+      upscale: "2k",
+      character: ["Nyra"]
+    });
+  });
 });

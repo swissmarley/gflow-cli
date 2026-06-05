@@ -84,6 +84,11 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .option("--outputs <n>", "number of outputs", parseIntegerOption, 1)
     .option("--timeout <seconds>", "generation timeout in seconds", parseIntegerOption)
     .option("--out <path>", "output directory", "./gflow-output")
+    .option("--character <name...>", "reference saved character(s) by name")
+    .option("--upscale <tier>", "download upscaled output: 2k or 4k", (v) => {
+      if (!["2k", "4k"].includes(v)) throw new InvalidArgumentError("must be 2k or 4k");
+      return v;
+    })
     .option("--profile <name>", "browser profile name", "default")
     .option("--browser <name>", "browser channel for Flow automation: chrome or chromium", parseBrowserOption, DEFAULT_BROWSER_CHANNEL)
     .option("--headed", "show browser", true)
@@ -98,7 +103,9 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
         ratio: command.ratio,
         outputs: command.outputs,
         timeout: command.timeout,
-        out: command.out
+        out: command.out,
+        character: command.character ?? [],
+        upscale: command.upscale
       });
       const outDir = resolveOutputDir(command.out);
       const owned = options.automation
@@ -127,6 +134,11 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .option("--end-frame <path>", "last-frame image (Frames mode)")
     .option("--timeout <seconds>", "generation timeout in seconds", parseIntegerOption)
     .option("--out <path>", "output directory", "./gflow-output")
+    .option("--character <name...>", "reference saved character(s) by name")
+    .option("--upscale <tier>", "download upscaled output: 2k or 4k", (v) => {
+      if (!["2k", "4k"].includes(v)) throw new InvalidArgumentError("must be 2k or 4k");
+      return v;
+    })
     .option("--profile <name>", "browser profile name", "default")
     .option("--browser <name>", "browser channel for Flow automation: chrome or chromium", parseBrowserOption, DEFAULT_BROWSER_CHANNEL)
     .option("--headed", "show browser", true)
@@ -144,7 +156,9 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
         startFrame: command.startFrame ? resolve(process.cwd(), command.startFrame) : undefined,
         endFrame: command.endFrame ? resolve(process.cwd(), command.endFrame) : undefined,
         timeout: command.timeout,
-        out: command.out
+        out: command.out,
+        character: command.character ?? [],
+        upscale: command.upscale
       });
       const outDir = resolveOutputDir(command.out);
       const owned = options.automation
