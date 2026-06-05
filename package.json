@@ -1,6 +1,6 @@
 {
   "name": "@swissmarley/gflow-cli",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Command-line tool that drives Google Flow in your own logged-in Chrome to generate images and videos.",
   "type": "module",
   "bin": {
