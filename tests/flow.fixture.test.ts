@@ -1,4 +1,4 @@
-import { mkdtemp, stat } from "node:fs/promises";
+import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -26,8 +26,10 @@ describe("FlowPage fixture", () => {
       expect(result.jobId).toBe("concept-image");
       expect(result.artifacts).toHaveLength(1);
       const saved = result.artifacts[0]!.path;
-      expect(saved.endsWith(".png")).toBe(true);
-      expect((await stat(saved)).size).toBeGreaterThan(0);
+      expect(saved).toContain("concept-image-001.png");
+      // Downloaded through the viewer's Download menu (Original tier); the fixture encodes
+      // the result identity in the bytes so we verify the right result reached disk.
+      await expect(readFile(saved, "utf8")).resolves.toBe("fixture-gen-1:original");
     } finally {
       await context.close();
     }
@@ -52,10 +54,10 @@ describe("FlowPage fixture", () => {
         outDir
       });
 
-      expect(first.artifacts[0]?.path.endsWith(".png")).toBe(true);
-      expect(second.artifacts[0]?.path.endsWith(".png")).toBe(true);
-      expect((await stat(first.artifacts[0]!.path)).size).toBeGreaterThan(0);
-      expect((await stat(second.artifacts[0]!.path)).size).toBeGreaterThan(0);
+      expect(first.artifacts[0]?.path).toContain("first-image-001.png");
+      expect(second.artifacts[0]?.path).toContain("second-image-001.png");
+      await expect(readFile(first.artifacts[0]!.path, "utf8")).resolves.toBe("fixture-gen-1:original");
+      await expect(readFile(second.artifacts[0]!.path, "utf8")).resolves.toBe("fixture-gen-2:original");
     } finally {
       await context.close();
     }
