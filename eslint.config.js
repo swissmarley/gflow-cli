@@ -5,7 +5,7 @@ export default tseslint.config(
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    ignores: ["dist", "node_modules", "gflow-output", ".gflow"]
+    ignores: ["dist", "node_modules", "gflow-output", ".gflow", "scripts"]
   },
   {
     files: ["src/**/*.ts", "tests/**/*.ts"],
