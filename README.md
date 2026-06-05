@@ -27,6 +27,10 @@ browser session — no private APIs, no login bypass.
 - 🎞️ **Frames mode** — animate between a first and last frame image
 - 🎛️ **Full control** — model, aspect ratio, duration, output count
 - 📦 **Batch pipelines** — run many jobs from a YAML file
+- ⬆️ **Full-quality downloads** — pulls Flow's native asset via the in-app Download menu; add `--upscale 2k` or `--upscale 4k` for upscaled tiers
+- 🧑‍🎨 **Characters** — create and reuse saved character references across generations
+- 🛠️ **Tools** — build and open custom Flow tools (image-filter, style-morph, etc.)
+- 🤖 **Agent** — drive the Flow Agent with a prompt, configure its defaults, and manage persistent instructions
 - 🔒 **Your session** — attaches to the Chrome you log into; nothing is stored beyond the
   browser profile on your disk
 
@@ -121,13 +125,18 @@ Attaches to your Flow window (or launches one) and confirms you're signed in and
 | `--model <name>` | Flow default | `Nano Banana 2`, `Nano Banana Pro`, `Imagen 4` |
 | `--ratio <ratio>` | Flow default | `16:9`, `4:3`, `1:1`, `3:4`, `9:16` |
 | `--outputs <n>` | `1` | Number of images (1–4) |
+| `--character <name...>` | — | Reference one or more saved characters |
+| `--upscale <tier>` | — | Download upscaled output: `2k` or `4k` (4K requires a Flow plan that allows it) |
 | `--out <path>` | `./gflow-output` | Output directory |
 | `--timeout <seconds>` | `900` | Generation timeout |
+| `--project <name>` | — | Flow project |
 | `--profile <name>` | `default` | Browser profile |
+| `--browser <name>` | `chrome` | Browser channel: `chrome` or `chromium` |
+| `--headed` / `--no-headed` | headed | Show or hide the browser |
 
 ### `gflow video`
 
-Everything in `image`, plus:
+All `image` options apply, plus:
 
 | Option | Default | Description |
 | --- | --- | --- |
@@ -136,6 +145,8 @@ Everything in `image`, plus:
 | `--duration <seconds>` | Flow default | `4`, `6`, `8`, `10` |
 | `--start-frame <path>` | — | First-frame image (enables **Frames** mode) |
 | `--end-frame <path>` | — | Last-frame image (Frames mode) |
+| `--character <name...>` | — | Reference one or more saved characters |
+| `--upscale <tier>` | — | Download upscaled output: `2k` or `4k` |
 | `--timeout <seconds>` | `1800` | Generation timeout |
 
 Model names are matched loosely, so `--model veo-3.1-fast` and `--model "Veo 3.1 - Fast"` are
@@ -174,6 +185,143 @@ jobs:
 ```
 
 Jobs run serially. Use `--continue-on-failure` to keep going after ordinary generation errors.
+
+### `gflow character`
+
+Create and manage saved character references that can be reused in `image` and `video` generations via `--character <name>`.
+
+#### `gflow character create`
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `--prompt <text>` | _required_ | Character description |
+| `--name <name>` | — | Label for the character |
+| `--model <model>` | Flow default | `nano-banana-2` or `nano-banana-pro` |
+| `--preset <preset>` | — | `familiar`, `eccentric`, `wicked`, or `fantastical` |
+| `--image <path...>` | — | One or more reference images to upload |
+| `--from-project <name...>` | — | Reference asset name(s) from the current project |
+| `--out <path>` | `./gflow-output` | Output directory (thumbnail saved here) |
+
+Also accepts the shared session options: `--project`, `--profile`, `--browser`, `--headed`/`--no-headed`.
+
+```bash
+gflow character create --prompt "a cheerful red-haired wizard" --name Merlin --preset fantastical
+
+# Reference an existing image as a starting point
+gflow character create --prompt "heroic knight" --name Arthur --image ./knight-ref.png
+```
+
+#### `gflow character list`
+
+Print the names of all saved characters (scoped to `--project` if provided).
+
+```bash
+gflow character list
+gflow character list --project my-film
+```
+
+### `gflow tool`
+
+Build and open custom Flow tools.
+
+#### `gflow tool create`
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `--prompt <text>` | _required_ | Describe the tool to build |
+| `--name <name>` | — | Label for the created tool |
+| `--preset <preset>` | — | `image-filter`, `style-morph`, `time-stretcher`, or `voice-over` |
+
+Also accepts the shared session options: `--project`, `--profile`, `--browser`, `--headed`/`--no-headed`.
+
+```bash
+gflow tool create --prompt "turn any photo into a watercolour painting" --name Watercolour --preset image-filter
+```
+
+#### `gflow tool list`
+
+Print the names of all saved tools.
+
+```bash
+gflow tool list
+```
+
+#### `gflow tool open`
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `--name <name>` | _required_ | Name of the tool to open |
+
+```bash
+gflow tool open --name Watercolour
+```
+
+### `gflow agent`
+
+Drive the Flow Agent from the command line. Results are downloaded at full quality.
+
+#### `gflow agent --prompt "<text>"`
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `--prompt <text>` | _required_ | Prompt to send to the agent |
+| `--id <id>` | `agent` | Job id used in output filenames |
+| `--out <path>` | `./gflow-output` | Output directory |
+
+Also accepts: `--project`, `--profile`, `--browser`, `--headed`/`--no-headed`.
+
+```bash
+gflow agent --prompt "create a moody noir poster for a jazz club"
+gflow agent --prompt "animate the poster as a short looping video" --id jazz-loop --out ./out
+```
+
+#### `gflow agent settings`
+
+Configure the agent's default generation behaviour.
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `--confirm <mode>` | — | Auto-confirm agent actions: `always` or `never` |
+| `--image-model <m>` | — | Default image model |
+| `--image-ratio <r>` | — | Default image aspect ratio |
+| `--image-quantity <n>` | — | Default number of images (1–4) |
+| `--video-model <m>` | — | Default video model |
+| `--video-ratio <r>` | — | Default video aspect ratio |
+| `--video-quantity <n>` | — | Default number of videos (1–4) |
+
+```bash
+gflow agent settings --confirm always --image-quantity 2 --video-model "Veo 3.1 - Fast"
+```
+
+#### `gflow agent instruction add`
+
+Add a persistent guideline the agent follows in every run.
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `--text <guideline>` | _required_ | Instruction text |
+| `--ref <name>` | — | Project image to attach as a visual reference |
+
+```bash
+gflow agent instruction add --text "always use a dark, cinematic colour palette"
+gflow agent instruction add --text "match the brand colours" --ref brand-swatch.png
+```
+
+#### `gflow agent instruction list`
+
+Print all active agent instructions.
+
+```bash
+gflow agent instruction list
+```
+
+#### `gflow agent instruction clear`
+
+Remove all agent instructions.
+
+```bash
+gflow agent instruction clear
+```
 
 ## Output
 
