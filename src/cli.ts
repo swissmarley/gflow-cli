@@ -6,11 +6,12 @@ import { Command, CommanderError, InvalidArgumentError } from "commander";
 import { BROWSER_CHANNELS, DEFAULT_BROWSER_CHANNEL, launchLoginChrome, openBrowserSession, type BrowserChannel } from "./browser/session.js";
 import { exitCodeForError, messageForError } from "./errors.js";
 import { FlowPage, FLOW_URL } from "./flow/page.js";
-import type { AgentAutomation, CharacterAutomation, FlowAutomation, ToolAutomation } from "./flow/types.js";
+import type { AgentAutomation, CharacterAutomation, EditAutomation, FlowAutomation, ToolAutomation } from "./flow/types.js";
 import { AgentPage } from "./flow/agent.js";
 import { CharacterPage } from "./flow/characters.js";
+import { EditPage } from "./flow/edit.js";
 import { ToolPage } from "./flow/tools.js";
-import { parseAgentInstruction, parseAgentRun, parseAgentSettings, parseBatchYaml, parseCharacter, parseImageJob, parseTool, parseVideoJob } from "./jobs/schema.js";
+import { parseAgentInstruction, parseAgentRun, parseAgentSettings, parseBatchYaml, parseCharacter, parseEditMedia, parseImageJob, parseTool, parseVideoJob } from "./jobs/schema.js";
 import { runJobs } from "./jobs/runner.js";
 import { resolveOutputDir } from "./config/paths.js";
 
@@ -19,6 +20,7 @@ export interface CreateProgramOptions {
   characterAutomation?: CharacterAutomation;
   toolAutomation?: ToolAutomation;
   agentAutomation?: AgentAutomation;
+  editAutomation?: EditAutomation;
 }
 
 function parseIntegerOption(value: string): number {
@@ -116,6 +118,12 @@ async function realAgentAutomation(profile: string, headed: boolean, browser: Br
   const session = await openBrowserSession({ profile, headed, browser });
   await session.page.goto(FLOW_URL, { waitUntil: "domcontentloaded" }).catch(() => undefined);
   return { automation: new AgentPage(session.page), close: () => session.close() };
+}
+
+async function realEditAutomation(profile: string, headed: boolean, browser: BrowserChannel): Promise<{ automation: EditAutomation; close(): Promise<void> }> {
+  const session = await openBrowserSession({ profile, headed, browser });
+  await session.page.goto(FLOW_URL, { waitUntil: "domcontentloaded" }).catch(() => undefined);
+  return { automation: new EditPage(session.page), close: () => session.close() };
 }
 
 export function createProgram(options: CreateProgramOptions = {}): Command {
@@ -290,7 +298,9 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
   const character = program.command("character").description("Create and manage Flow characters.");
   withSessionOptions(character.command("create").description("Create a character from a prompt and optional reference images."))
     .requiredOption("--prompt <text>", "character description")
-    .option("--name <name>", "character name")
+    .requiredOption("--name <name>", "character name")
+    .option("--description <text>", "character info (how the character acts)")
+    .option("--voice <voice>", "voice to assign to the character")
     .option("--model <model>", "nano-banana-2 or nano-banana-pro", (v) => {
       if (!["nano-banana-2", "nano-banana-pro"].includes(v)) throw new InvalidArgumentError("must be nano-banana-2 or nano-banana-pro");
       return v;
@@ -303,6 +313,8 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       const spec = parseCharacter({
         prompt: command.prompt,
         name: command.name,
+        description: command.description,
+        voice: command.voice,
         model: command.model,
         preset: command.preset,
         images: (command.image ?? []).map((p: string) => resolve(process.cwd(), p)),
@@ -472,6 +484,80 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     try {
       await owned.automation.clearInstructions(sessionOptions.project);
       console.log("instructions cleared");
+    } finally {
+      await owned.close();
+    }
+  });
+
+  const edit = program.command("edit").description("Edit an existing image or video in a project.");
+  withSessionOptions(edit.command("image").description("Edit an image by describing the change."))
+    .requiredOption("--media-id <id>", "unique media identifier (use `gflow media list` to find)")
+    .requiredOption("--prompt <text>", "describe what to change")
+    .option("--reference <path...>", "reference image(s) to upload")
+    .option("--from-project <name...>", "reference asset name(s) from the project")
+    .option("--timeout <seconds>", "generation timeout in seconds", parseIntegerOption)
+    .option("--out <path>", "output directory", "./gflow-output")
+    .action(async (command) => {
+      const spec = parseEditMedia({
+        mediaId: command.mediaId,
+        prompt: command.prompt,
+        referenceImages: (command.reference ?? []).map((p: string) => resolve(process.cwd(), p)),
+        fromProject: command.fromProject ?? [],
+        project: command.project,
+        out: command.out,
+        timeout: command.timeout
+      });
+      const owned = options.editAutomation
+        ? { automation: options.editAutomation, close: async () => undefined }
+        : await realEditAutomation(command.profile, command.headed, command.browser);
+      try {
+        const result = await owned.automation.editMedia({ ...spec, outDir: resolveOutputDir(spec.out) });
+        for (const a of result.artifacts) console.log(`saved ${a.path}`);
+      } finally {
+        await owned.close();
+      }
+    });
+
+  withSessionOptions(edit.command("video").description("Edit a video by describing the change."))
+    .requiredOption("--media-id <id>", "unique media identifier (use `gflow media list` to find)")
+    .requiredOption("--prompt <text>", "describe what to change")
+    .option("--reference <path...>", "reference media to upload")
+    .option("--from-project <name...>", "reference asset name(s) from the project")
+    .option("--timeout <seconds>", "generation timeout in seconds", parseIntegerOption)
+    .option("--out <path>", "output directory", "./gflow-output")
+    .action(async (command) => {
+      const spec = parseEditMedia({
+        mediaId: command.mediaId,
+        prompt: command.prompt,
+        referenceImages: (command.reference ?? []).map((p: string) => resolve(process.cwd(), p)),
+        fromProject: command.fromProject ?? [],
+        project: command.project,
+        out: command.out,
+        timeout: command.timeout
+      });
+      const owned = options.editAutomation
+        ? { automation: options.editAutomation, close: async () => undefined }
+        : await realEditAutomation(command.profile, command.headed, command.browser);
+      try {
+        const result = await owned.automation.editMedia({ ...spec, outDir: resolveOutputDir(spec.out) });
+        for (const a of result.artifacts) console.log(`saved ${a.path}`);
+      } finally {
+        await owned.close();
+      }
+    });
+
+  const media = program.command("media").description("Inspect project media assets.");
+  withSessionOptions(media.command("list").description("List all images and videos in the project with their unique IDs.")).action(async (command) => {
+    const owned = options.editAutomation
+      ? { automation: options.editAutomation, close: async () => undefined }
+      : await realEditAutomation(command.profile, command.headed, command.browser);
+    try {
+      const items = await owned.automation.listProjectMedia(command.project);
+      for (const item of items) {
+        const label = item.name ? `${item.id} ${item.type} ${item.name}` : `${item.id} ${item.type}`;
+        console.log(label);
+      }
+      if (items.length === 0) console.log("No media found in the project.");
     } finally {
       await owned.close();
     }

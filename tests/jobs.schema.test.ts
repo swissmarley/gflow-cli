@@ -64,18 +64,24 @@ describe("image/video upscale + character", () => {
 });
 
 describe("character schema", () => {
-  it("requires a prompt and defaults arrays", () => {
-    const c = parseCharacter({ prompt: "a stoic ranger" });
+  it("requires a name and prompt, defaults arrays", () => {
+    const c = parseCharacter({ name: "Ranger", prompt: "a stoic ranger" });
+    expect(c.name).toBe("Ranger");
     expect(c.images).toEqual([]);
     expect(c.fromProject).toEqual([]);
   });
-  it("accepts model + preset + refs", () => {
-    const c = parseCharacter({ prompt: "x", model: "nano-banana-pro", preset: "wicked", images: ["/a.png"], fromProject: ["Hero"] });
+  it("accepts model + preset + refs + description + voice", () => {
+    const c = parseCharacter({ name: "Hero", prompt: "x", model: "nano-banana-pro", preset: "wicked", description: "brave warrior", voice: "Alto", images: ["/a.png"], fromProject: ["Hero"] });
     expect(c.model).toBe("nano-banana-pro");
     expect(c.preset).toBe("wicked");
+    expect(c.description).toBe("brave warrior");
+    expect(c.voice).toBe("Alto");
   });
   it("rejects an unknown model", () => {
-    expect(() => parseCharacter({ prompt: "x", model: "dall-e" })).toThrow();
+    expect(() => parseCharacter({ name: "X", prompt: "x", model: "dall-e" })).toThrow();
+  });
+  it("rejects missing name", () => {
+    expect(() => parseCharacter({ prompt: "x" })).toThrow();
   });
 });
 

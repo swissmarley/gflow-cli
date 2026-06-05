@@ -114,8 +114,10 @@ export const CHARACTER_MODELS = ["nano-banana-2", "nano-banana-pro"] as const;
 export const CHARACTER_PRESETS = ["familiar", "eccentric", "wicked", "fantastical"] as const;
 
 export const characterSchema = z.object({
-  name: z.string().min(1).regex(/^[a-zA-Z0-9._ -]+$/).optional(),
+  name: z.string().min(1).regex(/^[a-zA-Z0-9._ -]+$/),
   prompt: z.string().min(1),
+  description: z.string().min(1).optional(),
+  voice: z.string().min(1).optional(),
   model: z.enum(CHARACTER_MODELS).optional(),
   preset: z.enum(CHARACTER_PRESETS).optional(),
   images: z.array(z.string().min(1)).default([]),
@@ -126,4 +128,18 @@ export const characterSchema = z.object({
 export type CharacterSpec = z.infer<typeof characterSchema>;
 export function parseCharacter(value: unknown): CharacterSpec {
   return characterSchema.parse(value);
+}
+
+export const editMediaSchema = z.object({
+  mediaId: z.string().min(1),
+  prompt: z.string().min(1),
+  referenceImages: z.array(z.string().min(1)).default([]),
+  fromProject: z.array(z.string().min(1)).default([]),
+  project: z.string().min(1).optional(),
+  out: z.string().min(1).default("./gflow-output"),
+  timeout: z.number().int().min(1).optional()
+});
+export type EditMediaSpec = z.infer<typeof editMediaSchema>;
+export function parseEditMedia(value: unknown): EditMediaSpec {
+  return editMediaSchema.parse(value);
 }

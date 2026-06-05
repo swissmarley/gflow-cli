@@ -43,11 +43,22 @@ export interface DownloadOutput {
 // offline fixture and any future UI change still produce a file.
 export async function downloadResult(input: DownloadInput): Promise<DownloadOutput> {
   await mkdir(input.outDir, { recursive: true });
+  let opened = false;
   if (await openViewerForResult(input.page, input.src)) {
+    opened = true;
     const viaMenu = await downloadViaMenu(input);
-    if (viaMenu) return viaMenu;
+    if (viaMenu) {
+      await input.page.keyboard.press("Escape").catch(() => undefined);
+      await input.page.waitForTimeout(500);
+      return viaMenu;
+    }
   }
-  return fallbackFetch(input);
+  const res = await fallbackFetch(input);
+  if (opened) {
+    await input.page.keyboard.press("Escape").catch(() => undefined);
+    await input.page.waitForTimeout(500);
+  }
+  return res;
 }
 
 async function openViewerForResult(page: Page, src: string): Promise<boolean> {

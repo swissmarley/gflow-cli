@@ -128,7 +128,10 @@ export async function pickOptionInSection(page: Page, sectionLabel: RegExp, patt
       const heading = [...document.querySelectorAll("*")].find(
         (e) => e.children.length === 0 && labelRe.test((e.textContent || "").trim())
       );
-      const section = heading?.closest("section,div,[role=group]")?.parentElement ?? document.body;
+      const container = heading?.closest("section,div,[role=group]");
+      const section = (container && container.querySelectorAll("button,[role=button],[role=radio],[role=menuitemradio],[role=option]").length > 0)
+        ? container
+        : container?.parentElement ?? document.body;
       const el = [...section.querySelectorAll("button,[role=button],[role=radio],[role=menuitemradio],[role=option]")]
         .filter((e) => {
           const r = e.getBoundingClientRect();
@@ -185,7 +188,7 @@ export async function addFromProject(page: Page, triggerText: RegExp, name: stri
 }
 
 export async function confirmPicker(page: Page, dialog: Locator): Promise<void> {
-  const confirm = dialog.locator("button").filter({ hasText: /add to (prompt|scene)/i }).first();
-  await confirm.click().catch(() => undefined);
-  await dialog.waitFor({ state: "hidden", timeout: 10000 }).catch(() => undefined);
+  const confirm = dialog.locator("button").filter({ hasText: /add to (prompt|scene|character)/i }).first();
+  await confirm.click();
+  await dialog.waitFor({ state: "hidden", timeout: 10000 });
 }

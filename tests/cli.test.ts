@@ -145,6 +145,8 @@ describe("CLI", () => {
       "create",
       "--prompt",
       "x",
+      "--name",
+      "test-character",
       "--model",
       "nano-banana-pro",
       "--image",
@@ -154,6 +156,7 @@ describe("CLI", () => {
     expect(characterAutomation.createCharacter).toHaveBeenCalledWith(
       expect.objectContaining({
         prompt: "x",
+        name: "test-character",
         model: "nano-banana-pro",
         images: expect.arrayContaining([
           expect.stringMatching(/\/a\.png$/)

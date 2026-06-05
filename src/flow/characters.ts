@@ -42,11 +42,14 @@ export class CharacterPage implements CharacterAutomation {
     await locators.characterCreateButton.first().click();
 
     const added = await this.waitForNewCharacter(before, (input.timeout ?? 600) * 1000);
+
+    await this.configureCharacter(input);
+
     let thumbnailPath: string | undefined;
     if (added) {
-      thumbnailPath = await this.saveThumb(this.page.context(), added, input.outDir, input.name ?? input.prompt.slice(0, 24));
+      thumbnailPath = await this.saveThumb(this.page.context(), added, input.outDir, input.name);
     }
-    return { name: input.name ?? "character", thumbnailPath, flowUrl: this.page.url() };
+    return { name: input.name, thumbnailPath, flowUrl: this.page.url() };
   }
 
   async listCharacters(project?: string): Promise<CharacterSummary[]> {
@@ -89,6 +92,55 @@ export class CharacterPage implements CharacterAutomation {
       }
       return results;
     });
+  }
+
+  private async configureCharacter(input: CreateCharacterInput): Promise<void> {
+    // After generation, the character detail page shows: an <input placeholder="Character Name">,
+    // "Select a voice" button, description <textarea>, and a "Done" button.
+    const nameInput = this.page.locator('input[placeholder="Character Name"]').first();
+    await nameInput.waitFor({ state: "visible", timeout: 30000 }).catch(() => undefined);
+    await this.page.waitForTimeout(500);
+
+    // Set the character name via the input field
+    if (await nameInput.count()) {
+      await nameInput.click();
+      await nameInput.fill(input.name);
+      await this.page.waitForTimeout(200);
+    }
+
+    // Select a voice if specified. The voice picker shows [role=option] items
+    // with names like "Zephyr" and a confirm button "Add to Character".
+    if (input.voice) {
+      const voiceBtn = this.page.locator("button").filter({ hasText: /Select a voice/i }).first();
+      if (await voiceBtn.count()) {
+        await voiceBtn.click();
+        await this.page.waitForTimeout(800);
+        const voiceOption = this.page.locator("[role=option]").filter({ hasText: new RegExp(input.voice, "i") }).first();
+        await voiceOption.waitFor({ state: "visible", timeout: 10000 }).catch(() => undefined);
+        await voiceOption.click().catch(() => undefined);
+        await this.page.waitForTimeout(300);
+        const addBtn = this.page.locator("button").filter({ hasText: /Add to Character/i }).first();
+        await addBtn.click().catch(() => undefined);
+        await this.page.waitForTimeout(500);
+      }
+    }
+
+    // Fill in character description if provided
+    if (input.description) {
+      const descField = this.page.locator('textarea[placeholder="Describe how your character acts..."]').first();
+      if (await descField.count()) {
+        await descField.click();
+        await descField.fill(input.description);
+        await this.page.waitForTimeout(200);
+      }
+    }
+
+    // Click "Done" to save the character configuration
+    const doneBtn = this.page.locator("button").filter({ hasText: /^Done$/i }).first();
+    if (await doneBtn.count()) {
+      await doneBtn.click();
+      await this.page.waitForTimeout(500);
+    }
   }
 
   private async characterThumbs(): Promise<string[]> {
