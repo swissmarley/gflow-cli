@@ -128,7 +128,8 @@ export async function pickOptionInSection(page: Page, sectionLabel: RegExp, patt
       const heading = [...document.querySelectorAll("*")].find(
         (e) => e.children.length === 0 && labelRe.test((e.textContent || "").trim())
       );
-      const container = heading?.closest("section,div,[role=group]");
+      if (!heading) return false;
+      const container = heading.closest("section,div,[role=group]");
       const section = (container && container.querySelectorAll("button,[role=button],[role=radio],[role=menuitemradio],[role=option]").length > 0)
         ? container
         : container?.parentElement ?? document.body;

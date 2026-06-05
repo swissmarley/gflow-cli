@@ -141,7 +141,7 @@ export class AgentPage implements AgentAutomation {
       }
       for (const i of [...document.querySelectorAll("img")]) {
         const s = (i as HTMLImageElement).currentSrc || (i as HTMLImageElement).src;
-        if (/media\.getMediaUrlRedirect/.test(s) && !/mediaUrlType=/.test(s)) out.push(s);
+        if ((/media\.getMediaUrlRedirect/.test(s) && !/mediaUrlType=/.test(s)) || s.startsWith("data:")) out.push(s);
       }
       return out;
     });

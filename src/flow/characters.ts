@@ -115,7 +115,7 @@ export class CharacterPage implements CharacterAutomation {
       if (await voiceBtn.count()) {
         await voiceBtn.click();
         await this.page.waitForTimeout(800);
-        const voiceOption = this.page.locator("[role=option]").filter({ hasText: new RegExp(input.voice, "i") }).first();
+        const voiceOption = this.page.locator("[role=option]").filter({ hasText: input.voice }).first();
         await voiceOption.waitFor({ state: "visible", timeout: 10000 }).catch(() => undefined);
         await voiceOption.click().catch(() => undefined);
         await this.page.waitForTimeout(300);
