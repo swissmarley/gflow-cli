@@ -8,7 +8,7 @@ import type {
   AgentAutomation, AgentInstructionInput, AgentInstructionSummary,
   AgentSettingsInput, FlowJobResult, RunAgentInput
 } from "./types.js";
-import { addFromProject, navigateToProject, pickModel, pickOption, pickOptionInSection, projectSubUrl } from "./ui.js";
+import { addFromProject, navigateToProject, pickOption, pickOptionInSection, projectSubUrl, selectModelOption } from "./ui.js";
 
 const RATIO_ICON: Record<string, string> = {
   "16:9": "crop_16_9", "9:16": "crop_9_16", "4:3": "crop_landscape", "1:1": "crop_square", "3:4": "crop_portrait"
@@ -46,12 +46,11 @@ export class AgentPage implements AgentAutomation {
     await this.page.waitForTimeout(500);
   }
 
-  // Open the model dropdown within a section, then choose the model.
-  // VERIFY LIVE: pickModel re-opens the dropdown; confirm this opens the right section's menu.
+  // Open the model dropdown within a section, then choose the model from the open menu.
   private async pickSectionModel(section: RegExp, model: string): Promise<void> {
     await pickOptionInSection(this.page, section, /arrow_drop_down/);
     await this.page.waitForTimeout(500);
-    await pickModel(this.page, model);
+    await selectModelOption(this.page, model);
   }
 
   async addInstruction(input: AgentInstructionInput): Promise<void> {

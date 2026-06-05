@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, extname, join } from "node:path";
-import type { BrowserContext, Locator, Page } from "playwright";
+import type { BrowserContext, Download, Locator, Page } from "playwright";
 import { GenerationFailedError, ManualActionRequiredError } from "../errors.js";
 
 export type DownloadQuality = "original" | "2k" | "4k";
@@ -66,16 +66,32 @@ async function openViewerForResult(page: Page, src: string): Promise<boolean> {
   return dl.waitFor({ state: "visible", timeout: 15000 }).then(() => true).catch(() => false);
 }
 
+// The viewer's primary Download control. For images it is a Radix menu trigger
+// (aria-haspopup="menu") offering 1K/2K/4K tiers; for videos it is a plain button
+// that downloads directly with no tier menu — so we match on the label, not the popup.
 function downloadButton(page: Page): Locator {
-  return page.locator('button[aria-haspopup="menu"]').filter({ hasText: /download/i }).first();
+  return page.locator("button").filter({ hasText: /download/i }).first();
 }
 
 async function downloadViaMenu(input: DownloadInput): Promise<DownloadOutput | undefined> {
-  const { page, quality, outDir, basename, type } = input;
-  await downloadButton(page).click().catch(() => undefined);
+  const { page } = input;
+  const btn = downloadButton(page);
+  const hasMenu = await btn.getAttribute("aria-haspopup").then((v) => v === "menu").catch(() => false);
+
+  if (!hasMenu) {
+    // Direct-download button (e.g. video): clicking it downloads the full asset immediately.
+    const [download] = await Promise.all([
+      page.waitForEvent("download", { timeout: 180000 }),
+      btn.click()
+    ]);
+    return saveDownload(input, download);
+  }
+
+  // Tier menu (e.g. image): open it and pick the requested quality.
+  await btn.click().catch(() => undefined);
   await page.waitForTimeout(500);
 
-  const pattern = qualityMenuPattern(quality);
+  const pattern = qualityMenuPattern(input.quality);
   const marked = await page.evaluate(
     ({ source, flags }) => {
       const re = new RegExp(source, flags);
@@ -101,8 +117,12 @@ async function downloadViaMenu(input: DownloadInput): Promise<DownloadOutput | u
     page.waitForEvent("download", { timeout: 180000 }),
     page.locator('[data-gflow-dl="1"]').first().click()
   ]);
-  const ext = extname(download.suggestedFilename()) || (type === "video" ? ".mp4" : ".png");
-  const assetPath = join(outDir, `${basename}${ext}`);
+  return saveDownload(input, download);
+}
+
+async function saveDownload(input: DownloadInput, download: Download): Promise<DownloadOutput> {
+  const ext = extname(download.suggestedFilename()) || (input.type === "video" ? ".mp4" : ".png");
+  const assetPath = join(input.outDir, `${input.basename}${ext}`);
   await download.saveAs(assetPath);
   return { assetPath };
 }

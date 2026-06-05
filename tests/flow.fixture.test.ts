@@ -62,4 +62,29 @@ describe("FlowPage fixture", () => {
       await context.close();
     }
   });
+
+  it("downloads a video through the viewer's menu-less Download button", async () => {
+    const profileDir = await mkdtemp(join(tmpdir(), "gflow-profile-"));
+    const outDir = await mkdtemp(join(tmpdir(), "gflow-output-"));
+    const context = await chromium.launchPersistentContext(profileDir, { headless: true, acceptDownloads: true });
+
+    try {
+      const page = context.pages()[0] ?? (await context.newPage());
+      // ?type=video makes the fixture render a <video> result whose viewer has a plain
+      // Download button (no tier menu), like real Flow — exercising the direct-download path.
+      await page.goto(`${FIXTURE}?type=video`);
+
+      const flow = new FlowPage(page);
+      const result = await flow.runJob({
+        job: { id: "clip", type: "video", prompt: "A short clip", outputs: 1, out: outDir, ingredients: [], character: [] },
+        outDir
+      });
+
+      const saved = result.artifacts[0]!.path;
+      expect(saved).toContain("clip-001.mp4");
+      await expect(readFile(saved, "utf8")).resolves.toBe("fixture-gen-1:original");
+    } finally {
+      await context.close();
+    }
+  });
 });

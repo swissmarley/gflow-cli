@@ -42,13 +42,27 @@ export class ToolPage implements ToolAutomation {
     await this.page.goto(projectSubUrl(projectId, "tools"), { waitUntil: "domcontentloaded" });
     await this.page.getByRole("tab", { name: /my tools/i }).first().click().catch(() => undefined);
     await this.page.waitForTimeout(1200);
-    // VERIFY LIVE: tool card title selector.
+    // Each tool card holds a "Tool options" button; the name is a leaf <span> in the card's
+    // title block (a sibling "by <author>" span follows). Climb from each options button to
+    // the nearest ancestor that carries a plausible name span. (Classes are hashed, so we
+    // match by structure/text, not class names.)
     return this.page.evaluate(() => {
-      const cards = [...document.querySelectorAll("[data-tool-id],[role=listitem],article")];
-      return cards
-        .map((c) => (c.querySelector("h3,h4,[class*=title],[class*=name]")?.textContent || "").trim())
-        .filter((name) => name.length > 0)
-        .map((name) => ({ name }));
+      const names = new Set<string>();
+      for (const btn of [...document.querySelectorAll("button")]) {
+        if (!/tool options/i.test(btn.textContent || "")) continue;
+        let card: Element | null = btn.parentElement;
+        for (let i = 0; i < 6 && card; i += 1, card = card.parentElement) {
+          const span = [...card.querySelectorAll("span")].find((s) => {
+            const t = (s.textContent || "").trim();
+            return s.children.length === 0 && t.length > 0 && !/^by /i.test(t) && !/tool options/i.test(t);
+          });
+          if (span) {
+            names.add((span.textContent || "").trim());
+            break;
+          }
+        }
+      }
+      return [...names].map((name) => ({ name }));
     });
   }
 

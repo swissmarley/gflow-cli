@@ -31,6 +31,14 @@ export async function pickOption(page: Page, pattern: RegExp): Promise<boolean> 
 export async function pickModel(page: Page, model: string): Promise<void> {
   if (!(await pickOption(page, /arrow_drop_down/))) return;
   await page.waitForTimeout(700);
+  await selectModelOption(page, model);
+}
+
+// Choose a model from an ALREADY-OPEN model menu (matches the option whose name equals
+// `model` with punctuation/spacing stripped). Split out from pickModel so callers that
+// open the dropdown themselves (e.g. a section-scoped Agent Settings dropdown) don't
+// re-open and accidentally close it.
+export async function selectModelOption(page: Page, model: string): Promise<void> {
   const target = model.toLowerCase().replace(/[^a-z0-9]/g, "");
   const marked = await page.evaluate((t) => {
     const norm = (s: string | null) => (s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -73,12 +81,27 @@ export async function navigateToProject(page: Page, projectName?: string): Promi
   if (!projectName && current) return current;
 
   if (projectName) {
+    // The dashboard renders each project as a thumbnail <a href="…/project/<id>"> with the
+    // name/timestamp in a sibling label (projects are named by timestamp unless renamed),
+    // so match the card whose surrounding label contains the name and open it by href.
     await page.goto(FLOW_BASE, { waitUntil: "domcontentloaded" });
-    // VERIFY LIVE (later): project cards on the dashboard.
-    const card = page.getByText(projectName, { exact: true }).first();
-    await card.waitFor({ state: "visible", timeout: 15000 });
-    await card.click();
-    await page.waitForURL(/\/project\/[0-9a-f-]+/i, { timeout: 20000 });
+    await page.locator('a[href*="/project/"]').first().waitFor({ state: "visible", timeout: 15000 }).catch(() => undefined);
+    const href = await page.evaluate((name) => {
+      const linkSel = 'a[href*="/project/"]';
+      for (const a of [...document.querySelectorAll(linkSel)]) {
+        // Climb to the largest ancestor that still wraps exactly this one card (its label
+        // sibling lives there), without reaching the grid that holds every card.
+        let card: Element = a;
+        while (card.parentElement && card.parentElement.querySelectorAll(linkSel).length === 1) {
+          card = card.parentElement;
+        }
+        if ((card.textContent || "").includes(name)) return a.getAttribute("href");
+      }
+      return null;
+    }, projectName);
+    if (!href) throw new Error(`Could not find a Flow project matching "${projectName}".`);
+    await page.goto(new URL(href, FLOW_BASE).toString(), { waitUntil: "domcontentloaded" });
+    await page.waitForURL(/\/project\/[0-9a-f-]+/i, { timeout: 20000 }).catch(() => undefined);
     const opened = projectIdFromUrl(page.url());
     if (!opened) throw new Error(`Could not open project "${projectName}".`);
     return opened;
