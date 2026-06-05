@@ -69,6 +69,18 @@ export function parseBatchYaml(text: string): BatchFile {
   return parseBatch(YAML.parse(text));
 }
 
+export const TOOL_PRESETS = ["image-filter", "style-morph", "time-stretcher", "voice-over"] as const;
+export const toolSchema = z.object({
+  name: z.string().min(1).optional(),
+  prompt: z.string().min(1),
+  preset: z.enum(TOOL_PRESETS).optional(),
+  project: z.string().min(1).optional()
+});
+export type ToolSpec = z.infer<typeof toolSchema>;
+export function parseTool(value: unknown): ToolSpec {
+  return toolSchema.parse(value);
+}
+
 export const CHARACTER_MODELS = ["nano-banana-2", "nano-banana-pro"] as const;
 export const CHARACTER_PRESETS = ["familiar", "eccentric", "wicked", "fantastical"] as const;
 

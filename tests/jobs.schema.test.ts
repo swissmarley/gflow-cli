@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseBatchYaml, parseImageJob, parseVideoJob, parseCharacter } from "../src/jobs/schema.js";
+import { parseBatchYaml, parseImageJob, parseVideoJob, parseCharacter, parseTool } from "../src/jobs/schema.js";
 
 describe("job schemas", () => {
   it("parses an image job with defaults", () => {
@@ -75,5 +75,17 @@ describe("character schema", () => {
   });
   it("rejects an unknown model", () => {
     expect(() => parseCharacter({ prompt: "x", model: "dall-e" })).toThrow();
+  });
+});
+
+describe("tool schema", () => {
+  it("requires a prompt", () => {
+    expect(() => parseTool({})).toThrow();
+  });
+  it("accepts a preset", () => {
+    expect(parseTool({ prompt: "remove background", preset: "image-filter" }).preset).toBe("image-filter");
+  });
+  it("rejects an unknown preset", () => {
+    expect(() => parseTool({ prompt: "x", preset: "nope" })).toThrow();
   });
 });
