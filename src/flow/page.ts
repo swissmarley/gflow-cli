@@ -13,6 +13,7 @@ import { createArtifactPlan, writeArtifactMetadata } from "../output/artifacts.j
 import type { GFlowJob } from "../jobs/schema.js";
 import type { FlowAutomation, FlowAutomationRunInput, FlowJobResult } from "./types.js";
 import { flowLocators } from "./locators.js";
+import { pickOption, pickModel } from "./ui.js";
 
 export const FLOW_URL = "https://labs.google/fx/tools/flow";
 
@@ -192,75 +193,22 @@ export class FlowPage implements FlowAutomation {
     await this.page.waitForTimeout(700);
 
     // Mode first — switching it changes which ratios/durations/models are offered.
-    await this.pickOption(job.type === "video" ? /Video$/ : /Image$/);
+    await pickOption(this.page, job.type === "video" ? /Video$/ : /Image$/);
     await this.page.waitForTimeout(400);
 
     // Video input mode: Frames (first/last frame images) vs Ingredients (text-to-video).
     if (job.type === "video") {
       const wantsFrames = Boolean(job.startFrame || job.endFrame);
-      await this.pickOption(wantsFrames ? /Frames$/ : /Ingredients$/);
+      await pickOption(this.page, wantsFrames ? /Frames$/ : /Ingredients$/);
       await this.page.waitForTimeout(300);
     }
 
-    if (job.ratio && RATIO_ICON[job.ratio]) await this.pickOption(new RegExp(`^${RATIO_ICON[job.ratio]}`));
-    if (job.type === "video" && job.duration) await this.pickOption(new RegExp(`^${job.duration}s$`));
-    await this.pickOption(job.outputs === 1 ? /^1x$/ : new RegExp(`^x${job.outputs}$`));
-    if (job.model) await this.pickModel(job.model);
+    if (job.ratio && RATIO_ICON[job.ratio]) await pickOption(this.page, new RegExp(`^${RATIO_ICON[job.ratio]}`));
+    if (job.type === "video" && job.duration) await pickOption(this.page, new RegExp(`^${job.duration}s$`));
+    await pickOption(this.page, job.outputs === 1 ? /^1x$/ : new RegExp(`^x${job.outputs}$`));
+    if (job.model) await pickModel(this.page, job.model);
 
     await this.page.keyboard.press("Escape").catch(() => undefined);
-    await this.page.waitForTimeout(300);
-  }
-
-  // Mark the visible control whose trimmed text matches `pattern`, then real-click it. The
-  // marker lets us match on the icon-ligature text (e.g. "play_circleVideo", "crop_16_916:9",
-  // "8s") yet still dispatch a trusted pointer event that React honors.
-  private async pickOption(pattern: RegExp): Promise<boolean> {
-    const marked = await this.page.evaluate(
-      ({ source, flags }) => {
-        const re = new RegExp(source, flags);
-        const el = [...document.querySelectorAll("button,[role=button],[role=radio],[role=menuitemradio],[role=option]")]
-          .filter((e) => {
-            const r = e.getBoundingClientRect();
-            return r.width > 0 && r.height > 0;
-          })
-          .find((b) => re.test((b.textContent || "").trim()));
-        if (!el) return false;
-        el.setAttribute("data-gflow-pick", "1");
-        return true;
-      },
-      { source: pattern.source, flags: pattern.flags }
-    );
-    if (!marked) return false;
-    await this.page.locator('[data-gflow-pick="1"]').first().click().catch(() => undefined);
-    await this.page.evaluate(() => document.querySelector('[data-gflow-pick="1"]')?.removeAttribute("data-gflow-pick"));
-    await this.page.waitForTimeout(250);
-    return true;
-  }
-
-  // Open the model dropdown and pick the option whose name matches `model` (compared with
-  // punctuation/spacing stripped, so "veo-3.1-fast" matches "Veo 3.1 - Fast").
-  private async pickModel(model: string): Promise<void> {
-    if (!(await this.pickOption(/arrow_drop_down/))) return;
-    await this.page.waitForTimeout(700);
-    const target = model.toLowerCase().replace(/[^a-z0-9]/g, "");
-    const marked = await this.page.evaluate((t) => {
-      const norm = (s: string | null) => (s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
-      const el = [...document.querySelectorAll("[role=option],[role=menuitem],[role=menuitemradio],button,li")]
-        .filter((e) => {
-          const r = e.getBoundingClientRect();
-          return r.width > 0 && r.height > 0;
-        })
-        .find((e) => t.length > 2 && norm(e.textContent).includes(t));
-      if (!el) return false;
-      el.setAttribute("data-gflow-pick", "1");
-      return true;
-    }, target);
-    if (marked) {
-      await this.page.locator('[data-gflow-pick="1"]').first().click().catch(() => undefined);
-      await this.page.evaluate(() => document.querySelector('[data-gflow-pick="1"]')?.removeAttribute("data-gflow-pick"));
-    } else {
-      await this.page.keyboard.press("Escape").catch(() => undefined);
-    }
     await this.page.waitForTimeout(300);
   }
 
