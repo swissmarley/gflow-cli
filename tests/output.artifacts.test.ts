@@ -2,7 +2,7 @@ import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { createArtifactPlan, writeArtifactMetadata } from "../src/output/artifacts.js";
+import { artifactBasename, createArtifactPlan, writeArtifactMetadata } from "../src/output/artifacts.js";
 
 describe("artifact output", () => {
   it("creates deterministic asset and metadata paths", () => {
@@ -44,5 +44,12 @@ describe("artifact output", () => {
     const metadata = JSON.parse(await readFile(plan.metadataPath, "utf8"));
     expect(metadata.jobId).toBe("concept-image");
     expect(metadata.status).toBe("downloaded");
+  });
+});
+
+describe("artifactBasename", () => {
+  it("zero-pads the index and prefixes the job id", () => {
+    expect(artifactBasename("hero", 1)).toBe("hero-001");
+    expect(artifactBasename("hero", 12)).toBe("hero-012");
   });
 });
