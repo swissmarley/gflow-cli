@@ -10,7 +10,9 @@ const baseJobSchema = z.object({
   outputs: z.number().int().min(1).max(8).default(1),
   out: z.string().min(1).default("./gflow-output"),
   timeout: z.number().int().min(1).optional(),
-  ingredients: z.array(z.string().min(1)).default([])
+  ingredients: z.array(z.string().min(1)).default([]),
+  character: z.array(z.string().min(1)).default([]),
+  upscale: z.enum(["2k", "4k"]).optional()
 });
 
 export const imageJobSchema = baseJobSchema.extend({
@@ -25,6 +27,8 @@ export const videoJobSchema = baseJobSchema.extend({
 });
 
 export const jobSchema = z.discriminatedUnion("type", [imageJobSchema, videoJobSchema]);
+
+export const UPSCALE_TIERS = ["2k", "4k"] as const;
 
 export const batchSchema = z.object({
   jobs: z.array(jobSchema).min(1)

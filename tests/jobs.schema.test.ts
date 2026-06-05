@@ -45,3 +45,19 @@ jobs:
     ).toThrow("Duplicate job id");
   });
 });
+
+describe("image/video upscale + character", () => {
+  it("defaults character to [] and leaves upscale undefined", () => {
+    const job = parseImageJob({ id: "a", type: "image", prompt: "x" });
+    expect(job.character).toEqual([]);
+    expect(job.upscale).toBeUndefined();
+  });
+  it("accepts upscale 2k and character names", () => {
+    const job = parseVideoJob({ id: "b", type: "video", prompt: "x", upscale: "2k", character: ["Nyra"] });
+    expect(job.upscale).toBe("2k");
+    expect(job.character).toEqual(["Nyra"]);
+  });
+  it("rejects an invalid upscale value", () => {
+    expect(() => parseImageJob({ id: "c", type: "image", prompt: "x", upscale: "8k" })).toThrow();
+  });
+});
