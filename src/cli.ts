@@ -4,15 +4,17 @@ import { Command, CommanderError, InvalidArgumentError } from "commander";
 import { BROWSER_CHANNELS, DEFAULT_BROWSER_CHANNEL, launchLoginChrome, openBrowserSession, type BrowserChannel } from "./browser/session.js";
 import { exitCodeForError, messageForError } from "./errors.js";
 import { FlowPage, FLOW_URL } from "./flow/page.js";
-import type { CharacterAutomation, FlowAutomation } from "./flow/types.js";
+import type { CharacterAutomation, FlowAutomation, ToolAutomation } from "./flow/types.js";
 import { CharacterPage } from "./flow/characters.js";
-import { parseBatchYaml, parseCharacter, parseImageJob, parseVideoJob } from "./jobs/schema.js";
+import { ToolPage } from "./flow/tools.js";
+import { parseBatchYaml, parseCharacter, parseImageJob, parseTool, parseVideoJob } from "./jobs/schema.js";
 import { runJobs } from "./jobs/runner.js";
 import { resolveOutputDir } from "./config/paths.js";
 
 export interface CreateProgramOptions {
   automation?: FlowAutomation;
   characterAutomation?: CharacterAutomation;
+  toolAutomation?: ToolAutomation;
 }
 
 function parseIntegerOption(value: string): number {
@@ -52,6 +54,12 @@ async function realCharacterAutomation(profile: string, headed: boolean, browser
   const session = await openBrowserSession({ profile, headed, browser });
   await session.page.goto(FLOW_URL, { waitUntil: "domcontentloaded" }).catch(() => undefined);
   return { automation: new CharacterPage(session.page), close: () => session.close() };
+}
+
+async function realToolAutomation(profile: string, headed: boolean, browser: BrowserChannel): Promise<{ automation: ToolAutomation; close(): Promise<void> }> {
+  const session = await openBrowserSession({ profile, headed, browser });
+  await session.page.goto(FLOW_URL, { waitUntil: "domcontentloaded" }).catch(() => undefined);
+  return { automation: new ToolPage(session.page), close: () => session.close() };
 }
 
 export function createProgram(options: CreateProgramOptions = {}): Command {
@@ -263,6 +271,49 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       await owned.close();
     }
   });
+
+  const tool = program.command("tool").description("Create and open Flow tools.");
+  withSessionOptions(tool.command("create"))
+    .requiredOption("--prompt <text>", "describe the tool to build")
+    .option("--name <name>", "label for the created tool")
+    .option("--preset <preset>", "image-filter|style-morph|time-stretcher|voice-over")
+    .action(async (command) => {
+      const spec = parseTool({ prompt: command.prompt, name: command.name, preset: command.preset, project: command.project });
+      const owned = options.toolAutomation
+        ? { automation: options.toolAutomation, close: async () => undefined }
+        : await realToolAutomation(command.profile, command.headed, command.browser);
+      try {
+        const r = await owned.automation.createTool(spec);
+        console.log(`tool created: ${r.name}`);
+      } finally {
+        await owned.close();
+      }
+    });
+
+  withSessionOptions(tool.command("list")).action(async (command) => {
+    const owned = options.toolAutomation
+      ? { automation: options.toolAutomation, close: async () => undefined }
+      : await realToolAutomation(command.profile, command.headed, command.browser);
+    try {
+      for (const t of await owned.automation.listTools(command.project)) console.log(t.name);
+    } finally {
+      await owned.close();
+    }
+  });
+
+  withSessionOptions(tool.command("open"))
+    .requiredOption("--name <name>", "tool to open")
+    .action(async (command) => {
+      const owned = options.toolAutomation
+        ? { automation: options.toolAutomation, close: async () => undefined }
+        : await realToolAutomation(command.profile, command.headed, command.browser);
+      try {
+        await owned.automation.openTool(command.name, command.project);
+        console.log(`opened ${command.name}`);
+      } finally {
+        await owned.close();
+      }
+    });
 
   program.configureOutput({
     writeErr: (text) => process.stderr.write(text)

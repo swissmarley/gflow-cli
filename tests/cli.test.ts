@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import type { CharacterAutomation, FlowAutomation } from "../src/flow/types.js";
+import type { CharacterAutomation, FlowAutomation, ToolAutomation } from "../src/flow/types.js";
 import { createProgram, runCli } from "../src/cli.js";
 
 describe("CLI", () => {
@@ -162,6 +162,52 @@ describe("CLI", () => {
     );
     const call = vi.mocked(characterAutomation.createCharacter).mock.calls[0]?.[0];
     expect(call?.images[0]).toBe(resolve(process.cwd(), "./a.png"));
+  });
+
+  it("calls createTool with prompt and preset", async () => {
+    const toolAutomation: ToolAutomation = {
+      createTool: vi.fn(async () => ({
+        name: "remove bg",
+        flowUrl: "https://labs.google/fx/tools/flow/tools/123"
+      })),
+      listTools: vi.fn(async () => [{ name: "remove bg" }, { name: "style shift" }]),
+      openTool: vi.fn(async () => undefined)
+    };
+    const program = createProgram({ toolAutomation });
+
+    await program.parseAsync([
+      "node",
+      "gflow",
+      "tool",
+      "create",
+      "--prompt",
+      "remove bg",
+      "--preset",
+      "image-filter"
+    ]);
+
+    expect(toolAutomation.createTool).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt: "remove bg",
+        preset: "image-filter"
+      })
+    );
+  });
+
+  it("calls listTools and prints tool names", async () => {
+    const toolAutomation: ToolAutomation = {
+      createTool: vi.fn(async () => ({
+        name: "remove bg",
+        flowUrl: "https://labs.google/fx/tools/flow/tools/123"
+      })),
+      listTools: vi.fn(async () => [{ name: "remove bg" }, { name: "style shift" }]),
+      openTool: vi.fn(async () => undefined)
+    };
+    const program = createProgram({ toolAutomation });
+
+    await program.parseAsync(["node", "gflow", "tool", "list"]);
+
+    expect(toolAutomation.listTools).toHaveBeenCalled();
   });
 
   it("passes --upscale and --character to the image job", async () => {
