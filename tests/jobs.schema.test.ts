@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseBatchYaml, parseImageJob, parseVideoJob } from "../src/jobs/schema.js";
+import { parseBatchYaml, parseImageJob, parseVideoJob, parseCharacter } from "../src/jobs/schema.js";
 
 describe("job schemas", () => {
   it("parses an image job with defaults", () => {
@@ -59,5 +59,21 @@ describe("image/video upscale + character", () => {
   });
   it("rejects an invalid upscale value", () => {
     expect(() => parseImageJob({ id: "c", type: "image", prompt: "x", upscale: "8k" })).toThrow();
+  });
+});
+
+describe("character schema", () => {
+  it("requires a prompt and defaults arrays", () => {
+    const c = parseCharacter({ prompt: "a stoic ranger" });
+    expect(c.images).toEqual([]);
+    expect(c.fromProject).toEqual([]);
+  });
+  it("accepts model + preset + refs", () => {
+    const c = parseCharacter({ prompt: "x", model: "nano-banana-pro", preset: "wicked", images: ["/a.png"], fromProject: ["Hero"] });
+    expect(c.model).toBe("nano-banana-pro");
+    expect(c.preset).toBe("wicked");
+  });
+  it("rejects an unknown model", () => {
+    expect(() => parseCharacter({ prompt: "x", model: "dall-e" })).toThrow();
   });
 });

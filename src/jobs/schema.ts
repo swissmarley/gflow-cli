@@ -68,3 +68,21 @@ export function parseBatch(value: unknown): BatchFile {
 export function parseBatchYaml(text: string): BatchFile {
   return parseBatch(YAML.parse(text));
 }
+
+export const CHARACTER_MODELS = ["nano-banana-2", "nano-banana-pro"] as const;
+export const CHARACTER_PRESETS = ["familiar", "eccentric", "wicked", "fantastical"] as const;
+
+export const characterSchema = z.object({
+  name: z.string().min(1).regex(/^[a-zA-Z0-9._ -]+$/).optional(),
+  prompt: z.string().min(1),
+  model: z.enum(CHARACTER_MODELS).optional(),
+  preset: z.enum(CHARACTER_PRESETS).optional(),
+  images: z.array(z.string().min(1)).default([]),
+  fromProject: z.array(z.string().min(1)).default([]),
+  project: z.string().min(1).optional(),
+  out: z.string().min(1).default("./gflow-output")
+});
+export type CharacterSpec = z.infer<typeof characterSchema>;
+export function parseCharacter(value: unknown): CharacterSpec {
+  return characterSchema.parse(value);
+}
