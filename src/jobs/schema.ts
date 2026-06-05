@@ -81,6 +81,35 @@ export function parseTool(value: unknown): ToolSpec {
   return toolSchema.parse(value);
 }
 
+export const agentSettingsSchema = z.object({
+  confirm: z.enum(["always", "never"]).optional(),
+  imageModel: z.string().min(1).optional(),
+  imageRatio: z.string().min(1).optional(),
+  imageQuantity: z.number().int().min(1).max(4).optional(),
+  videoModel: z.string().min(1).optional(),
+  videoRatio: z.string().min(1).optional(),
+  videoQuantity: z.number().int().min(1).max(4).optional(),
+  project: z.string().min(1).optional()
+});
+export const agentInstructionSchema = z.object({
+  text: z.string().min(1),
+  ref: z.string().min(1).optional(),
+  project: z.string().min(1).optional()
+});
+export const agentRunSchema = z.object({
+  id: z.string().min(1).regex(/^[a-zA-Z0-9._-]+$/),
+  prompt: z.string().min(1),
+  project: z.string().min(1).optional(),
+  out: z.string().min(1).default("./gflow-output"),
+  timeout: z.number().int().min(1).optional()
+});
+export type AgentSettingsSpec = z.infer<typeof agentSettingsSchema>;
+export type AgentInstructionSpec = z.infer<typeof agentInstructionSchema>;
+export type AgentRunSpec = z.infer<typeof agentRunSchema>;
+export const parseAgentSettings = (v: unknown): AgentSettingsSpec => agentSettingsSchema.parse(v);
+export const parseAgentInstruction = (v: unknown): AgentInstructionSpec => agentInstructionSchema.parse(v);
+export const parseAgentRun = (v: unknown): AgentRunSpec => agentRunSchema.parse(v);
+
 export const CHARACTER_MODELS = ["nano-banana-2", "nano-banana-pro"] as const;
 export const CHARACTER_PRESETS = ["familiar", "eccentric", "wicked", "fantastical"] as const;
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseBatchYaml, parseImageJob, parseVideoJob, parseCharacter, parseTool } from "../src/jobs/schema.js";
+import { parseAgentSettings, parseAgentInstruction, parseAgentRun } from "../src/jobs/schema.js";
 
 describe("job schemas", () => {
   it("parses an image job with defaults", () => {
@@ -87,5 +88,23 @@ describe("tool schema", () => {
   });
   it("rejects an unknown preset", () => {
     expect(() => parseTool({ prompt: "x", preset: "nope" })).toThrow();
+  });
+});
+
+describe("agent schemas", () => {
+  it("agent settings accepts confirm + per-type defaults", () => {
+    const s = parseAgentSettings({ confirm: "never", imageQuantity: 2, videoRatio: "9:16" });
+    expect(s.confirm).toBe("never");
+    expect(s.imageQuantity).toBe(2);
+  });
+  it("agent settings rejects quantity > 4", () => {
+    expect(() => parseAgentSettings({ imageQuantity: 5 })).toThrow();
+  });
+  it("instruction requires text", () => {
+    expect(() => parseAgentInstruction({ ref: "Hero" })).toThrow();
+    expect(parseAgentInstruction({ text: "keep it cinematic" }).text).toBe("keep it cinematic");
+  });
+  it("agent run requires id + prompt", () => {
+    expect(parseAgentRun({ id: "a1", prompt: "make a teaser" }).out).toBe("./gflow-output");
   });
 });
