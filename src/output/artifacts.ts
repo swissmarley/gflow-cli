@@ -22,17 +22,22 @@ export interface ArtifactMetadata {
   ratio?: string;
   duration?: number;
   requestedOutputs: number;
+  quality?: "original" | "2k" | "4k";
+  characters?: string[];
   downloadedAt: string;
   source: "google-flow-browser";
   flowUrl: string;
   status: "downloaded";
 }
 
+export function artifactBasename(jobId: string, index: number): string {
+  return `${jobId}-${String(index).padStart(3, "0")}`;
+}
+
 export function createArtifactPlan(input: ArtifactPlanInput): ArtifactPlan {
   const cleanExtension = input.extension.startsWith(".") ? input.extension : `.${input.extension}`;
-  const index = String(input.index).padStart(3, "0");
   // Files are written directly into outDir; the job-id prefix keeps them unique across jobs.
-  const basename = `${input.jobId}-${index}`;
+  const basename = artifactBasename(input.jobId, input.index);
 
   return {
     assetPath: join(input.outDir, `${basename}${cleanExtension}`),

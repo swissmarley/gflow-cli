@@ -14,7 +14,8 @@ function job(id: string): GFlowJob {
     prompt: `Prompt ${id}`,
     outputs: 1,
     out: "./gflow-output",
-    ingredients: []
+    ingredients: [],
+    character: []
   };
 }
 

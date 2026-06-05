@@ -19,6 +19,10 @@ export function flowLocators(page: Page) {
     creditMarker: page.getByText(/run out of credits|insufficient credits|no credits left/i),
     blockedMarker: page.getByText(/can.?t help with|violates|content policy/i),
     failedMarker: page.getByText(/generation failed|couldn.?t generate|something went wrong/i),
-    manualActionMarker: page.getByText(/verify your identity|sign in to continue|consent required/i)
+    manualActionMarker: page.getByText(/verify your identity|sign in to continue|consent required/i),
+    characterPrompt: page.locator('[role="textbox"][contenteditable="true"]'),
+    characterCreateButton: page.locator("button").filter({ hasText: /arrow_forward/ }).filter({ hasText: /create/i }),
+    characterUploadButton: page.locator("button").filter({ hasText: /^upload/i }),
+    characterAddFromProject: page.locator("button").filter({ hasText: /add from project/i })
   };
 }

@@ -1,6 +1,5 @@
-import { mkdir, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
-import type { BrowserContext, Page } from "playwright";
+import { join } from "node:path";
+import type { Page } from "playwright";
 import {
   CreditLimitError,
   GenerationBlockedError,
@@ -9,10 +8,12 @@ import {
   ManualActionRequiredError,
   RateLimitedError
 } from "../errors.js";
-import { createArtifactPlan, writeArtifactMetadata } from "../output/artifacts.js";
+import { artifactBasename, writeArtifactMetadata } from "../output/artifacts.js";
+import { downloadResult, type DownloadQuality } from "./download.js";
 import type { GFlowJob } from "../jobs/schema.js";
 import type { FlowAutomation, FlowAutomationRunInput, FlowJobResult } from "./types.js";
 import { flowLocators } from "./locators.js";
+import { pickOption, pickModel, confirmPicker, navigateToProject } from "./ui.js";
 
 export const FLOW_URL = "https://labs.google/fx/tools/flow";
 
@@ -26,36 +27,6 @@ const RATIO_ICON: Record<string, string> = {
   "3:4": "crop_portrait"
 };
 
-interface FetchedMedia {
-  bytes: Buffer;
-  contentType: string | undefined;
-}
-
-// Result media are served from authenticated URLs like
-// labs.google/fx/api/trpc/media.getMediaUrlRedirect?name=<uuid>. Fetching them through the
-// logged-in browser context returns the real bytes; an in-page fetch() returns the SPA HTML.
-async function fetchMedia(context: BrowserContext, src: string): Promise<FetchedMedia> {
-  if (src.startsWith("data:")) {
-    const comma = src.indexOf(",");
-    const meta = src.slice(5, comma);
-    const payload = src.slice(comma + 1);
-    const bytes = meta.includes("base64") ? Buffer.from(payload, "base64") : Buffer.from(decodeURIComponent(payload), "utf8");
-    return { bytes, contentType: meta.split(";")[0] || undefined };
-  }
-  const response = await context.request.get(src);
-  if (!response.ok()) {
-    throw new GenerationFailedError(`Failed to download a result (HTTP ${response.status()}).`);
-  }
-  return { bytes: Buffer.from(await response.body()), contentType: response.headers()["content-type"] };
-}
-
-function extensionFor(type: "image" | "video", contentType: string | undefined): string {
-  if (contentType?.includes("jpeg")) return ".jpg";
-  if (contentType?.includes("png")) return ".png";
-  if (contentType?.includes("webp")) return ".webp";
-  if (contentType?.includes("mp4") || contentType?.includes("video")) return ".mp4";
-  return type === "video" ? ".mp4" : ".png";
-}
 
 export class FlowPage implements FlowAutomation {
   constructor(private readonly page: Page, private readonly flowUrl = FLOW_URL) {}
@@ -90,7 +61,12 @@ export class FlowPage implements FlowAutomation {
 
   async runJob(input: FlowAutomationRunInput): Promise<FlowJobResult> {
     const locators = flowLocators(this.page);
-    await this.ensureProject();
+    if (input.job.project) {
+      await navigateToProject(this.page, input.job.project);
+      await locators.promptBox.first().waitFor({ state: "visible", timeout: 20000 }).catch(() => undefined);
+    } else {
+      await this.ensureProject();
+    }
     await this.assertReady();
     await this.applySettings(input.job);
 
@@ -103,6 +79,10 @@ export class FlowPage implements FlowAutomation {
       throw new GenerationFailedError("Could not find the Flow prompt box. Open or create a project first.");
     }
 
+    for (const name of input.job.character ?? []) {
+      await this.referenceCharacter(name);
+    }
+
     const before = new Set(await this.resultSrcs(input.job.type));
     await this.fillPrompt(input.job.prompt);
     await this.submit();
@@ -111,18 +91,21 @@ export class FlowPage implements FlowAutomation {
     const newSrcs = await this.waitForResults(before, input.job.outputs, generationTimeoutSeconds * 1000, input.job.type);
 
     const context = this.page.context();
+    const quality: DownloadQuality = input.job.upscale ?? "original";
     const artifacts = [];
     for (let index = 0; index < Math.min(input.job.outputs, newSrcs.length); index += 1) {
-      const media = await fetchMedia(context, newSrcs[index]);
-      const plan = createArtifactPlan({
+      const basename = artifactBasename(input.job.id, index + 1);
+      const { assetPath } = await downloadResult({
+        page: this.page,
+        context,
+        src: newSrcs[index],
+        type: input.job.type,
+        quality,
         outDir: input.outDir,
-        jobId: input.job.id,
-        index: index + 1,
-        extension: extensionFor(input.job.type, media.contentType)
+        basename
       });
-      await mkdir(dirname(plan.assetPath), { recursive: true });
-      await writeFile(plan.assetPath, media.bytes);
-      await writeArtifactMetadata(plan.metadataPath, {
+      const metadataPath = join(input.outDir, `${basename}.json`);
+      await writeArtifactMetadata(metadataPath, {
         jobId: input.job.id,
         type: input.job.type,
         prompt: input.job.prompt,
@@ -131,12 +114,14 @@ export class FlowPage implements FlowAutomation {
         ratio: input.job.ratio,
         duration: input.job.type === "video" ? input.job.duration : undefined,
         requestedOutputs: input.job.outputs,
+        quality,
+        characters: input.job.character?.length ? input.job.character : undefined,
         downloadedAt: new Date().toISOString(),
         source: "google-flow-browser",
         flowUrl: this.page.url(),
         status: "downloaded"
       });
-      artifacts.push({ path: plan.assetPath, metadataPath: plan.metadataPath });
+      artifacts.push({ path: assetPath, metadataPath });
     }
 
     if (artifacts.length === 0) {
@@ -192,75 +177,22 @@ export class FlowPage implements FlowAutomation {
     await this.page.waitForTimeout(700);
 
     // Mode first — switching it changes which ratios/durations/models are offered.
-    await this.pickOption(job.type === "video" ? /Video$/ : /Image$/);
+    await pickOption(this.page, job.type === "video" ? /Video$/ : /Image$/);
     await this.page.waitForTimeout(400);
 
     // Video input mode: Frames (first/last frame images) vs Ingredients (text-to-video).
     if (job.type === "video") {
       const wantsFrames = Boolean(job.startFrame || job.endFrame);
-      await this.pickOption(wantsFrames ? /Frames$/ : /Ingredients$/);
+      await pickOption(this.page, wantsFrames ? /Frames$/ : /Ingredients$/);
       await this.page.waitForTimeout(300);
     }
 
-    if (job.ratio && RATIO_ICON[job.ratio]) await this.pickOption(new RegExp(`^${RATIO_ICON[job.ratio]}`));
-    if (job.type === "video" && job.duration) await this.pickOption(new RegExp(`^${job.duration}s$`));
-    await this.pickOption(job.outputs === 1 ? /^1x$/ : new RegExp(`^x${job.outputs}$`));
-    if (job.model) await this.pickModel(job.model);
+    if (job.ratio && RATIO_ICON[job.ratio]) await pickOption(this.page, new RegExp(`^${RATIO_ICON[job.ratio]}`));
+    if (job.type === "video" && job.duration) await pickOption(this.page, new RegExp(`^${job.duration}s$`));
+    await pickOption(this.page, job.outputs === 1 ? /^1x$/ : new RegExp(`^x${job.outputs}$`));
+    if (job.model) await pickModel(this.page, job.model);
 
     await this.page.keyboard.press("Escape").catch(() => undefined);
-    await this.page.waitForTimeout(300);
-  }
-
-  // Mark the visible control whose trimmed text matches `pattern`, then real-click it. The
-  // marker lets us match on the icon-ligature text (e.g. "play_circleVideo", "crop_16_916:9",
-  // "8s") yet still dispatch a trusted pointer event that React honors.
-  private async pickOption(pattern: RegExp): Promise<boolean> {
-    const marked = await this.page.evaluate(
-      ({ source, flags }) => {
-        const re = new RegExp(source, flags);
-        const el = [...document.querySelectorAll("button,[role=button],[role=radio],[role=menuitemradio],[role=option]")]
-          .filter((e) => {
-            const r = e.getBoundingClientRect();
-            return r.width > 0 && r.height > 0;
-          })
-          .find((b) => re.test((b.textContent || "").trim()));
-        if (!el) return false;
-        el.setAttribute("data-gflow-pick", "1");
-        return true;
-      },
-      { source: pattern.source, flags: pattern.flags }
-    );
-    if (!marked) return false;
-    await this.page.locator('[data-gflow-pick="1"]').first().click().catch(() => undefined);
-    await this.page.evaluate(() => document.querySelector('[data-gflow-pick="1"]')?.removeAttribute("data-gflow-pick"));
-    await this.page.waitForTimeout(250);
-    return true;
-  }
-
-  // Open the model dropdown and pick the option whose name matches `model` (compared with
-  // punctuation/spacing stripped, so "veo-3.1-fast" matches "Veo 3.1 - Fast").
-  private async pickModel(model: string): Promise<void> {
-    if (!(await this.pickOption(/arrow_drop_down/))) return;
-    await this.page.waitForTimeout(700);
-    const target = model.toLowerCase().replace(/[^a-z0-9]/g, "");
-    const marked = await this.page.evaluate((t) => {
-      const norm = (s: string | null) => (s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
-      const el = [...document.querySelectorAll("[role=option],[role=menuitem],[role=menuitemradio],button,li")]
-        .filter((e) => {
-          const r = e.getBoundingClientRect();
-          return r.width > 0 && r.height > 0;
-        })
-        .find((e) => t.length > 2 && norm(e.textContent).includes(t));
-      if (!el) return false;
-      el.setAttribute("data-gflow-pick", "1");
-      return true;
-    }, target);
-    if (marked) {
-      await this.page.locator('[data-gflow-pick="1"]').first().click().catch(() => undefined);
-      await this.page.evaluate(() => document.querySelector('[data-gflow-pick="1"]')?.removeAttribute("data-gflow-pick"));
-    } else {
-      await this.page.keyboard.press("Escape").catch(() => undefined);
-    }
     await this.page.waitForTimeout(300);
   }
 
@@ -290,7 +222,33 @@ export class FlowPage implements FlowAutomation {
       await dialog.locator("[role=option]").first().click().catch(() => undefined);
     });
 
-    const confirm = dialog.locator("button").filter({ hasText: /add to (prompt|scene)/i }).first();
+    await confirmPicker(this.page, dialog);
+  }
+
+  // Reference a saved character in the current generation.
+  // Live-verified: the "add_2 Create" button opens a media-picker dialog with a
+  // "Characters" tab; we click the tab, pick the named tile, then confirm.
+  private async referenceCharacter(name: string): Promise<void> {
+    // Open the ingredient picker (aria-haspopup="dialog", text "add_2Create")
+    const addBtn = this.page.locator('button[aria-haspopup="dialog"]').filter({ hasText: /add_2/i }).first();
+    if ((await addBtn.count()) === 0) return;
+    await addBtn.click().catch(() => undefined);
+
+    const dialog = this.page.locator("[role=dialog],[aria-modal=true]").first();
+    await dialog.waitFor({ state: "visible", timeout: 10000 }).catch(() => undefined);
+
+    // Switch to the Characters tab
+    const charsTab = dialog.locator("button,[role=tab]").filter({ hasText: /Characters/i }).first();
+    await charsTab.click().catch(() => undefined);
+    await this.page.waitForTimeout(400);
+
+    // Pick the tile by name
+    const tile = dialog.getByText(name, { exact: true }).first();
+    await tile.waitFor({ state: "visible", timeout: 10000 }).catch(() => undefined);
+    await tile.click().catch(() => undefined);
+
+    // Confirm
+    const confirm = dialog.locator("button").filter({ hasText: /add to prompt/i }).first();
     await confirm.click().catch(() => undefined);
     await dialog.waitFor({ state: "hidden", timeout: 10000 }).catch(() => undefined);
   }
