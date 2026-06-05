@@ -19,7 +19,7 @@ describe("FlowPage fixture", () => {
 
       const flow = new FlowPage(page);
       const result = await flow.runJob({
-        job: { id: "concept-image", type: "image", prompt: "A studio product still", outputs: 1, out: outDir, ingredients: [] },
+        job: { id: "concept-image", type: "image", prompt: "A studio product still", outputs: 1, out: outDir, ingredients: [], character: [] },
         outDir
       });
 
@@ -46,11 +46,11 @@ describe("FlowPage fixture", () => {
 
       const flow = new FlowPage(page);
       const first = await flow.runJob({
-        job: { id: "first-image", type: "image", prompt: "First image", outputs: 1, out: outDir, ingredients: [] },
+        job: { id: "first-image", type: "image", prompt: "First image", outputs: 1, out: outDir, ingredients: [], character: [] },
         outDir
       });
       const second = await flow.runJob({
-        job: { id: "second-image", type: "image", prompt: "Second image", outputs: 1, out: outDir, ingredients: [] },
+        job: { id: "second-image", type: "image", prompt: "Second image", outputs: 1, out: outDir, ingredients: [], character: [] },
         outDir
       });
 
