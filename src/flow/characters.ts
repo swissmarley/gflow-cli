@@ -1,0 +1,113 @@
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import type { BrowserContext, Page } from "playwright";
+import { GenerationBlockedError, GenerationFailedError } from "../errors.js";
+import type { CharacterAutomation, CharacterResult, CharacterSummary, CreateCharacterInput } from "./types.js";
+import { addFromProject, navigateToProject, pickModel, projectSubUrl, uploadMedia } from "./ui.js";
+import { flowLocators } from "./locators.js";
+
+const PRESET_LABEL: Record<NonNullable<CreateCharacterInput["preset"]>, RegExp> = {
+  familiar: /The Familiar/i,
+  eccentric: /The Eccentric/i,
+  wicked: /The Wicked/i,
+  fantastical: /The Fantastical/i
+};
+
+export class CharacterPage implements CharacterAutomation {
+  constructor(private readonly page: Page) {}
+
+  async createCharacter(input: CreateCharacterInput): Promise<CharacterResult> {
+    const projectId = await navigateToProject(this.page, input.project);
+    await this.page.goto(projectSubUrl(projectId, "characters"), { waitUntil: "domcontentloaded" });
+    const locators = flowLocators(this.page);
+    await locators.characterPrompt.first().waitFor({ state: "visible", timeout: 20000 });
+
+    if (input.preset) {
+      await this.page.getByText(PRESET_LABEL[input.preset]).first().click().catch(() => undefined);
+      await this.page.waitForTimeout(300);
+    }
+    if (input.model) await pickModel(this.page, input.model);
+
+    for (const file of input.images) await uploadMedia(this.page, /^upload/i, file);
+    for (const ref of input.fromProject) await addFromProject(this.page, /add from project/i, ref);
+
+    const box = locators.characterPrompt.first();
+    await box.click();
+    await box.press("ControlOrMeta+a").catch(() => undefined);
+    await box.press("Backspace").catch(() => undefined);
+    await box.pressSequentially(input.prompt, { delay: 8 });
+
+    await this.assertNotBlocked();
+    const before = new Set(await this.characterThumbs());
+    await locators.characterCreateButton.first().click();
+
+    const added = await this.waitForNewCharacter(before, (input.timeout ?? 600) * 1000);
+    let thumbnailPath: string | undefined;
+    if (added) {
+      thumbnailPath = await this.saveThumb(this.page.context(), added, input.outDir, input.name ?? input.prompt.slice(0, 24));
+    }
+    return { name: input.name ?? "character", thumbnailPath, flowUrl: this.page.url() };
+  }
+
+  async listCharacters(project?: string): Promise<CharacterSummary[]> {
+    const projectId = await navigateToProject(this.page, project);
+    await this.page.goto(projectSubUrl(projectId, "characters"), { waitUntil: "domcontentloaded" });
+    await this.page.waitForTimeout(1500);
+    // VERIFY LIVE: character tile structure (name + thumbnail).
+    return this.page.evaluate(() => {
+      const tiles = [...document.querySelectorAll("[data-character-id],[role=listitem],figure")];
+      const results: Array<{ name: string; thumbnailUrl?: string }> = [];
+      for (const t of tiles) {
+        const name = (t.querySelector("figcaption,[class*=name],h3,h4")?.textContent || "").trim();
+        if (!name) continue;
+        const img = t.querySelector("img") as HTMLImageElement | null;
+        const thumbnailUrl = img?.currentSrc || img?.src || undefined;
+        results.push(thumbnailUrl !== undefined && thumbnailUrl !== "" ? { name, thumbnailUrl } : { name });
+      }
+      return results;
+    });
+  }
+
+  private async characterThumbs(): Promise<string[]> {
+    return this.page.$$eval("img", (imgs) =>
+      imgs.map((i) => (i as HTMLImageElement).currentSrc || (i as HTMLImageElement).src).filter((s) => /getMediaUrlRedirect/.test(s))
+    );
+  }
+
+  private async waitForNewCharacter(before: Set<string>, timeoutMs: number): Promise<string | undefined> {
+    const deadline = Date.now() + timeoutMs;
+    const locators = flowLocators(this.page);
+    while (Date.now() < deadline) {
+      if (await locators.blockedMarker.first().isVisible().catch(() => false)) {
+        throw new GenerationBlockedError("Flow blocked the character generation (content policy).");
+      }
+      if (await locators.failedMarker.first().isVisible().catch(() => false)) {
+        throw new GenerationFailedError("Flow reported the character generation failed.");
+      }
+      const added = (await this.characterThumbs()).filter((s) => !before.has(s));
+      if (added.length > 0) return added[0];
+      await this.page.waitForTimeout(1500);
+    }
+    return undefined;
+  }
+
+  private async assertNotBlocked(): Promise<void> {
+    const locators = flowLocators(this.page);
+    if (await locators.blockedMarker.first().isVisible().catch(() => false)) {
+      throw new GenerationBlockedError("Flow blocked this character prompt.");
+    }
+  }
+
+  private async saveThumb(context: BrowserContext, src: string, outDir: string, name: string): Promise<string | undefined> {
+    try {
+      const response = await context.request.get(src);
+      if (!response.ok()) return undefined;
+      await mkdir(outDir, { recursive: true });
+      const path = join(outDir, `character-${name.replace(/[^a-zA-Z0-9._-]+/g, "_")}.png`);
+      await writeFile(path, Buffer.from(await response.body()));
+      return path;
+    } catch {
+      return undefined;
+    }
+  }
+}
