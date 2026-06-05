@@ -1,4 +1,4 @@
-import type { Page } from "playwright";
+import type { Locator, Page } from "playwright";
 
 // Mark the visible control whose trimmed text matches `pattern`, then real-click it.
 // Flow's controls live in React/Radix portals and ignore synthetic DOM .click(); a
@@ -123,4 +123,46 @@ export async function pickOptionInSection(page: Page, sectionLabel: RegExp, patt
   await page.evaluate(() => document.querySelector('[data-gflow-pick="1"]')?.removeAttribute("data-gflow-pick"));
   await page.waitForTimeout(250);
   return true;
+}
+
+// Open the media picker via a trigger button (its text matches `triggerText`),
+// upload a local file, wait for it to auto-select, then confirm with "Add to Prompt".
+export async function uploadMedia(page: Page, triggerText: RegExp, filePath: string): Promise<void> {
+  const trigger = page.locator("button").filter({ hasText: triggerText }).first();
+  await trigger.click().catch(() => undefined);
+  const dialog = page.locator("[role=dialog],[aria-modal=true]").first();
+  await dialog.waitFor({ state: "visible", timeout: 10000 }).catch(() => undefined);
+
+  const uploadButton = dialog.locator("button").filter({ hasText: /upload/i }).first();
+  const [chooser] = await Promise.all([
+    page.waitForEvent("filechooser", { timeout: 15000 }),
+    uploadButton.click()
+  ]);
+  await chooser.setFiles(filePath);
+
+  const selected = dialog.locator('[role=option][aria-selected="true"]').first();
+  await selected.waitFor({ state: "visible", timeout: 30000 }).catch(async () => {
+    await dialog.locator("[role=option]").first().click().catch(() => undefined);
+  });
+  await confirmPicker(page, dialog);
+}
+
+// Open the media picker and pick an existing project asset whose label matches `name`.
+// VERIFY LIVE (later): the picker's tab + asset tiles.
+export async function addFromProject(page: Page, triggerText: RegExp, name: string): Promise<void> {
+  const trigger = page.locator("button").filter({ hasText: triggerText }).first();
+  await trigger.click().catch(() => undefined);
+  const dialog = page.locator("[role=dialog],[aria-modal=true]").first();
+  await dialog.waitFor({ state: "visible", timeout: 10000 });
+
+  const tile = dialog.getByText(name, { exact: true }).first();
+  await tile.waitFor({ state: "visible", timeout: 15000 });
+  await tile.click();
+  await confirmPicker(page, dialog);
+}
+
+export async function confirmPicker(page: Page, dialog: Locator): Promise<void> {
+  const confirm = dialog.locator("button").filter({ hasText: /add to (prompt|scene)/i }).first();
+  await confirm.click().catch(() => undefined);
+  await dialog.waitFor({ state: "hidden", timeout: 10000 }).catch(() => undefined);
 }

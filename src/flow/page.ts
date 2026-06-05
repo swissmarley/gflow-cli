@@ -13,7 +13,7 @@ import { createArtifactPlan, writeArtifactMetadata } from "../output/artifacts.j
 import type { GFlowJob } from "../jobs/schema.js";
 import type { FlowAutomation, FlowAutomationRunInput, FlowJobResult } from "./types.js";
 import { flowLocators } from "./locators.js";
-import { pickOption, pickModel } from "./ui.js";
+import { pickOption, pickModel, confirmPicker } from "./ui.js";
 
 export const FLOW_URL = "https://labs.google/fx/tools/flow";
 
@@ -238,9 +238,7 @@ export class FlowPage implements FlowAutomation {
       await dialog.locator("[role=option]").first().click().catch(() => undefined);
     });
 
-    const confirm = dialog.locator("button").filter({ hasText: /add to (prompt|scene)/i }).first();
-    await confirm.click().catch(() => undefined);
-    await dialog.waitFor({ state: "hidden", timeout: 10000 }).catch(() => undefined);
+    await confirmPicker(this.page, dialog);
   }
 
   private async fillPrompt(prompt: string): Promise<void> {
