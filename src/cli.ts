@@ -1,5 +1,7 @@
 import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { readFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { Command, CommanderError, InvalidArgumentError } from "commander";
 import { BROWSER_CHANNELS, DEFAULT_BROWSER_CHANNEL, launchLoginChrome, openBrowserSession, type BrowserChannel } from "./browser/session.js";
 import { exitCodeForError, messageForError } from "./errors.js";
@@ -31,6 +33,21 @@ function parseBrowserOption(value: string): BrowserChannel {
     throw new InvalidArgumentError(`must be one of: ${BROWSER_CHANNELS.join(", ")}`);
   }
   return value as BrowserChannel;
+}
+
+// Read the CLI version from package.json so `--version` never drifts from the package.
+// Dev runs this file from src/ (package.json one level up); the build runs it from
+// dist/src/ (two levels up), so try both anchors relative to this module.
+export function resolveVersion(): string {
+  const here = dirname(fileURLToPath(import.meta.url));
+  for (const rel of ["../package.json", "../../package.json"]) {
+    try {
+      return (JSON.parse(readFileSync(join(here, rel), "utf8")) as { version: string }).version;
+    } catch {
+      // try the next candidate
+    }
+  }
+  return "0.0.0";
 }
 
 async function realAutomation(profile: string, headed: boolean, browser: BrowserChannel): Promise<{ automation: FlowAutomation; close(): Promise<void> }> {
@@ -72,12 +89,13 @@ async function realAgentAutomation(profile: string, headed: boolean, browser: Br
 
 export function createProgram(options: CreateProgramOptions = {}): Command {
   const program = new Command();
-  program.name("gflow").description("Local browser automation CLI for Google Flow.").version("0.1.0");
+  program.name("gflow").description("Local browser automation CLI for Google Flow.").version(resolveVersion());
   program.exitOverride();
 
   const auth = program.command("auth").description("Manage the local Flow browser session.");
   auth
     .command("login")
+    .description("Open a plain Chrome to sign in to Google Flow (run before other commands).")
     .option("--profile <name>", "browser profile name", "default")
     .action(async (command: { profile: string }) => {
       // Launch a plain Chrome (no remote-debugging port) for sign-in. Google blocks sign-in
@@ -91,6 +109,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
 
   program
     .command("doctor")
+    .description("Check that the Flow browser session is signed in and ready.")
     .option("--profile <name>", "browser profile name", "default")
     .option("--browser <name>", "browser channel for Flow automation: chrome or chromium", parseBrowserOption, DEFAULT_BROWSER_CHANNEL)
     .option("--headed", "show browser", true)
@@ -109,6 +128,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
 
   program
     .command("image")
+    .description("Generate an image from a text prompt.")
     .requiredOption("--id <id>", "job id")
     .requiredOption("--prompt <text>", "generation prompt")
     .option("--project <name>", "Flow project")
@@ -156,6 +176,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
 
   program
     .command("video")
+    .description("Generate a video from a prompt (text-to-video, or frames with --start-frame/--end-frame).")
     .requiredOption("--id <id>", "job id")
     .requiredOption("--prompt <text>", "generation prompt")
     .option("--project <name>", "Flow project")
@@ -209,6 +230,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
 
   program
     .command("batch")
+    .description("Run a YAML pipeline of image/video jobs.")
     .argument("<file>", "YAML pipeline file")
     .option("--out <path>", "output directory", "./gflow-output")
     .option("--profile <name>", "browser profile name", "default")
@@ -235,7 +257,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     });
 
   const character = program.command("character").description("Create and manage Flow characters.");
-  withSessionOptions(character.command("create"))
+  withSessionOptions(character.command("create").description("Create a character from a prompt and optional reference images."))
     .requiredOption("--prompt <text>", "character description")
     .option("--name <name>", "character name")
     .option("--model <model>", "nano-banana-2 or nano-banana-pro", (v) => {
@@ -269,7 +291,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       }
     });
 
-  withSessionOptions(character.command("list")).action(async (command) => {
+  withSessionOptions(character.command("list").description("List the project's characters.")).action(async (command) => {
     const owned = options.characterAutomation
       ? { automation: options.characterAutomation, close: async () => undefined }
       : await realCharacterAutomation(command.profile, command.headed, command.browser);
@@ -281,7 +303,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
   });
 
   const tool = program.command("tool").description("Create and open Flow tools.");
-  withSessionOptions(tool.command("create"))
+  withSessionOptions(tool.command("create").description("Build a Flow tool (applet) from a description."))
     .requiredOption("--prompt <text>", "describe the tool to build")
     .option("--name <name>", "label for the created tool")
     .option("--preset <preset>", "image-filter|style-morph|time-stretcher|voice-over")
@@ -298,7 +320,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       }
     });
 
-  withSessionOptions(tool.command("list")).action(async (command) => {
+  withSessionOptions(tool.command("list").description("List the project's tools.")).action(async (command) => {
     const owned = options.toolAutomation
       ? { automation: options.toolAutomation, close: async () => undefined }
       : await realToolAutomation(command.profile, command.headed, command.browser);
@@ -309,7 +331,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     }
   });
 
-  withSessionOptions(tool.command("open"))
+  withSessionOptions(tool.command("open").description("Open a tool by name."))
     .requiredOption("--name <name>", "tool to open")
     .action(async (command) => {
       const owned = options.toolAutomation
@@ -345,7 +367,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       }
     });
 
-  withSessionOptions(agent.command("settings"))
+  withSessionOptions(agent.command("settings").description("Set the agent's image/video model, format, quantity, and confirmation mode."))
     .option("--confirm <mode>", "always or never", (v) => {
       if (!["always", "never"].includes(v)) throw new InvalidArgumentError("must be always or never");
       return v;
@@ -379,7 +401,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     });
 
   const instruction = agent.command("instruction").description("Manage agent instructions.");
-  withSessionOptions(instruction.command("add"))
+  withSessionOptions(instruction.command("add").description("Add a guideline, optionally with a project image as reference."))
     .requiredOption("--text <guideline>", "guideline text")
     .option("--ref <name>", "project image to use as reference")
     .action(async (command) => {
@@ -394,7 +416,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
         await owned.close();
       }
     });
-  withSessionOptions(instruction.command("list")).action(async (command) => {
+  withSessionOptions(instruction.command("list").description("List the agent's instructions.")).action(async (command) => {
     const owned = options.agentAutomation
       ? { automation: options.agentAutomation, close: async () => undefined }
       : await realAgentAutomation(command.profile, command.headed, command.browser);
@@ -404,7 +426,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       await owned.close();
     }
   });
-  withSessionOptions(instruction.command("clear")).action(async (command) => {
+  withSessionOptions(instruction.command("clear").description("Remove all agent instructions.")).action(async (command) => {
     const owned = options.agentAutomation
       ? { automation: options.agentAutomation, close: async () => undefined }
       : await realAgentAutomation(command.profile, command.headed, command.browser);
