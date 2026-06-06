@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="https://raw.githubusercontent.com/swissmarley/gflow-cli/main/assets/logo.svg" alt="gflow" width="460">
+
 # gflow
 
 **Generate images and videos with [Google Flow](https://labs.google/fx/tools/flow) from your terminal.**
