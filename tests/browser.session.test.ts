@@ -7,6 +7,7 @@ import {
   clearStaleSingletonLock,
   closeChromeForProfile,
   findChromeProcessesForProfile,
+  hiddenWindowArgs,
   isSingletonLockError,
   messageForBrowserLaunchError,
   resolveChromeExecutable
@@ -43,6 +44,20 @@ describe("buildBrowserLaunchOptions", () => {
     const options = buildBrowserLaunchOptions({ profile: "default", headed: true, browser: "chrome" });
     expect(options.ignoreDefaultArgs).toContain("--enable-automation");
     expect(options.args).toContain("--disable-blink-features=AutomationControlled");
+  });
+});
+
+describe("hiddenWindowArgs", () => {
+  it("adds no window flags for a headed run", () => {
+    expect(hiddenWindowArgs(true)).toEqual([]);
+  });
+
+  it("hides the window off-screen for a headless run without using Chrome's headless engine", () => {
+    const args = hiddenWindowArgs(false);
+    expect(args).toContain("--window-position=-32000,-32000");
+    expect(args.some((a) => a.startsWith("--start-minimized"))).toBe(true);
+    // The whole point: never fall back to --headless=new, which Google can still flag as insecure.
+    expect(args.some((a) => a.includes("headless"))).toBe(false);
   });
 });
 

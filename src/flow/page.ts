@@ -13,7 +13,7 @@ import { downloadResult, type DownloadQuality } from "./download.js";
 import type { GFlowJob } from "../jobs/schema.js";
 import type { FlowAutomation, FlowAutomationRunInput, FlowJobResult } from "./types.js";
 import { flowLocators } from "./locators.js";
-import { pickOption, pickModel, confirmPicker, navigateToProject } from "./ui.js";
+import { dismissOpenLayers, pickOption, pickModel, confirmPicker, navigateToProject } from "./ui.js";
 
 export const FLOW_URL = "https://labs.google/fx/tools/flow";
 
@@ -192,8 +192,9 @@ export class FlowPage implements FlowAutomation {
     await pickOption(this.page, job.outputs === 1 ? /^1x$/ : new RegExp(`^x${job.outputs}$`));
     if (job.model) await pickModel(this.page, job.model);
 
-    await this.page.keyboard.press("Escape").catch(() => undefined);
-    await this.page.waitForTimeout(300);
+    // The model dropdown and the settings popover are separate layers; a single Escape can
+    // leave one of them open over the prompt box, so close them all.
+    await dismissOpenLayers(this.page);
   }
 
   // Frames mode: fill the Start/End frame slot. Clicking the slot opens the Add Media dialog;
@@ -255,7 +256,13 @@ export class FlowPage implements FlowAutomation {
 
   private async fillPrompt(prompt: string): Promise<void> {
     const box = flowLocators(this.page).promptBox.first();
-    await box.click();
+    // A leftover popover layer over the prompt box swallows the click; clear layers first,
+    // and if a click is still intercepted, clear again and fall back to focusing directly.
+    await dismissOpenLayers(this.page);
+    await box.click().catch(async () => {
+      await dismissOpenLayers(this.page);
+      await box.click({ timeout: 5000 }).catch(() => box.evaluate((el) => (el as HTMLElement).focus()));
+    });
     // Clear any existing text (sequential/batch jobs reuse the same prompt box) with real
     // key events, then type so the contenteditable's framework registers the input.
     await box.press("ControlOrMeta+a").catch(() => undefined);
@@ -272,7 +279,10 @@ export class FlowPage implements FlowAutomation {
       if (enabled) break;
       await this.page.waitForTimeout(300);
     }
-    await submit.click();
+    await submit.click().catch(async () => {
+      await dismissOpenLayers(this.page);
+      await submit.click();
+    });
   }
 
   private async waitForResults(before: Set<string>, expected: number, timeoutMs: number, type: "image" | "video"): Promise<string[]> {

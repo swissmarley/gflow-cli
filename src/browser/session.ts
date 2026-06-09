@@ -9,6 +9,17 @@ import { FLOW_URL } from "../flow/page.js";
 const execFileAsync = promisify(execFile);
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
+// Playwright's library default action timeout is 0 — i.e. wait forever. Flow's React/Radix
+// menus occasionally leave a freshly opened option mid-animation or transiently covered, and an
+// unbounded click then hangs indefinitely until the user nudges the page by hand (the reported
+// "gflow video sticks on model selection" symptom). Bounding every action means a best-effort
+// click that can't land fails fast and the run always proceeds instead of stalling.
+export const DEFAULT_ACTION_TIMEOUT_MS = 20000;
+
+function applyPageDefaults(page: Page): void {
+  page.setDefaultTimeout(DEFAULT_ACTION_TIMEOUT_MS);
+}
+
 export const BROWSER_CHANNELS = ["chrome", "chromium"] as const;
 export type BrowserChannel = (typeof BROWSER_CHANNELS)[number];
 export const DEFAULT_BROWSER_CHANNEL: BrowserChannel = "chrome";
@@ -195,6 +206,43 @@ export interface ChromeLaunch {
   port: number;
 }
 
+// A "headless" run still launches the REAL, full Chrome and drives it over CDP exactly like a
+// headed run — Google already trusts that browser (it is what the profile signed in with) and
+// will not re-challenge it. We only hide the window so nothing shows on the user's desktop.
+// We deliberately avoid Chrome's own --headless=new: that is a separate engine Google can
+// still fingerprint as insecure ("this browser or app may not be secure"), which is exactly
+// the failure headed mode does not hit.
+//
+// These launch args are best-effort hints (they work on Windows/Linux); macOS ignores both
+// the off-screen position (windows are clamped to the visible display) and --start-minimized
+// for a directly spawned Chrome. applyWindowVisibility() is the authoritative enforcement:
+// it minimizes the window over CDP as soon as the session attaches.
+export function hiddenWindowArgs(headed: boolean): string[] {
+  return headed ? [] : ["--window-position=-32000,-32000", "--window-size=1280,800", "--start-minimized"];
+}
+
+// Enforce the requested window visibility over CDP (Browser.setWindowBounds), which works on
+// every platform including macOS where the launch-arg hints above are ignored. Headless runs
+// minimize the window; headed runs restore it, so a Chrome left minimized by a previous
+// --no-headed command becomes visible again when the user asks for --headed. Best-effort:
+// a CDP hiccup here must never block the actual job.
+async function applyWindowVisibility(page: Page, headed: boolean): Promise<void> {
+  try {
+    const cdp = await page.context().newCDPSession(page);
+    try {
+      const { windowId } = await cdp.send("Browser.getWindowForTarget");
+      await cdp.send("Browser.setWindowBounds", {
+        windowId,
+        bounds: { windowState: headed ? "normal" : "minimized" }
+      });
+    } finally {
+      await cdp.detach().catch(() => undefined);
+    }
+  } catch {
+    // Window control is cosmetic; never fail the session over it.
+  }
+}
+
 // Launch a real Chrome bound to this profile with a debugging port and leave it running
 // (detached) so later commands can reattach to the same trusted, logged-in window.
 // --remote-allow-origins=* is required for Chrome >=111 to accept the CDP WebSocket.
@@ -209,7 +257,11 @@ export async function launchDebuggableChrome(profile: string, headed: boolean): 
     "--remote-allow-origins=*",
     "--no-first-run",
     "--no-default-browser-check",
-    ...(headed ? [] : ["--headless=new"]),
+    // Keep navigator.webdriver false so the session looks like ordinary Chrome, matching the
+    // automation fingerprint stripping in buildBrowserLaunchOptions.
+    "--disable-blink-features=AutomationControlled",
+    // Headless = same real Chrome over CDP as headed, just hidden off-screen (see above).
+    ...hiddenWindowArgs(headed),
     FLOW_URL
   ];
 
@@ -261,6 +313,7 @@ async function openChromiumSession(options: BrowserSessionOptions, profileDir: s
       throw new Error(messageForBrowserLaunchError(error, options.browser, profileDir) ?? (error instanceof Error ? error.message : String(error)));
     });
   const page = context.pages()[0] ?? (await context.newPage());
+  applyPageDefaults(page);
   return {
     context,
     page,
@@ -311,6 +364,8 @@ export async function openBrowserSession(options: BrowserSessionOptions): Promis
 
   const context = browser.contexts()[0] ?? (await browser.newContext());
   const page = pickFlowPage(context) ?? context.pages()[0] ?? (await context.newPage());
+  applyPageDefaults(page);
+  await applyWindowVisibility(page, options.headed);
 
   return {
     context,

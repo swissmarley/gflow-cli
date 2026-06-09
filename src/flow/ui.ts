@@ -61,6 +61,23 @@ export async function selectModelOption(page: Page, model: string): Promise<void
   await page.waitForTimeout(300);
 }
 
+// Close every lingering Radix layer (settings popover, model dropdown, tooltips). Escape
+// dismisses one layer at a time, and a leftover layer swallows pointer events aimed at the
+// prompt box underneath — the cause of "gflow video sticks until I click the page myself".
+// Loop until no popper wrapper is visible (bounded, in case a layer ignores Escape).
+export async function dismissOpenLayers(page: Page): Promise<void> {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const open = await page
+      .locator("[data-radix-popper-content-wrapper], [data-radix-menu-content][data-state=open]")
+      .first()
+      .isVisible()
+      .catch(() => false);
+    if (!open) return;
+    await page.keyboard.press("Escape").catch(() => undefined);
+    await page.waitForTimeout(250);
+  }
+}
+
 export const FLOW_BASE = "https://labs.google/fx/tools/flow";
 export type ProjectSub = "" | "characters" | "tools" | "create-tool";
 
