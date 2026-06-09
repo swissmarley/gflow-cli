@@ -259,7 +259,9 @@ export class FlowPage implements FlowAutomation {
     // A leftover popover layer over the prompt box swallows the click; clear layers first,
     // and if a click is still intercepted, clear again and fall back to focusing directly.
     await dismissOpenLayers(this.page);
-    await box.click().catch(async () => {
+    // Short timeout: layers were just dismissed, so a still-intercepted click should reach
+    // the recovery path quickly instead of burning the full 20s session default.
+    await box.click({ timeout: 2000 }).catch(async () => {
       await dismissOpenLayers(this.page);
       await box.click({ timeout: 5000 }).catch(() => box.evaluate((el) => (el as HTMLElement).focus()));
     });
@@ -279,7 +281,7 @@ export class FlowPage implements FlowAutomation {
       if (enabled) break;
       await this.page.waitForTimeout(300);
     }
-    await submit.click().catch(async () => {
+    await submit.click({ timeout: 2000 }).catch(async () => {
       await dismissOpenLayers(this.page);
       await submit.click();
     });

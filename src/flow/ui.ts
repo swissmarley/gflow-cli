@@ -67,8 +67,10 @@ export async function selectModelOption(page: Page, model: string): Promise<void
 // Loop until no popper wrapper is visible (bounded, in case a layer ignores Escape).
 export async function dismissOpenLayers(page: Page): Promise<void> {
   for (let attempt = 0; attempt < 5; attempt += 1) {
+    // :visible matters: Radix leaves stale hidden wrappers in the DOM, and .first() locking
+    // onto one of those would report "nothing open" while a later visible layer still blocks.
     const open = await page
-      .locator("[data-radix-popper-content-wrapper], [data-radix-menu-content][data-state=open]")
+      .locator("[data-radix-popper-content-wrapper]:visible, [data-radix-menu-content][data-state=open]:visible")
       .first()
       .isVisible()
       .catch(() => false);
