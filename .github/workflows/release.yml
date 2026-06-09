@@ -1,20 +1,53 @@
 name: Release
 
-# Publish to npm when a version tag is pushed, e.g.:
-#   npm version patch        # bumps package.json + creates the tag
-#   git push --follow-tags   # triggers this workflow
+# Releases automatically on every push to main (direct commits and PR merges). The version
+# bump is derived from Conventional Commit subjects since the last v* tag:
+#   feat!: or BREAKING CHANGE       -> major
+#   feat:                           -> minor
+#   fix: / perf: / refactor:        -> patch
+#   docs/ci/chore/test/style only   -> no release
+# When a release is due, the workflow lints/tests, bumps package.json with `npm version`,
+# publishes to npm, pushes the chore(release) commit + v* tag, and creates a GitHub release.
 on:
   push:
-    tags:
-      - "v*"
+    branches: [main]
+
+permissions:
+  contents: write
+
+# Never run two releases at once; queue instead so each push computes its bump from the
+# previous release's tag.
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
-  publish:
+  release:
     runs-on: ubuntu-latest
+    # The version-bump commit is pushed with GITHUB_TOKEN, which GitHub never triggers
+    # workflows for; this guard is belt-and-braces against a manually replayed event.
+    if: ${{ !startsWith(github.event.head_commit.message, 'chore(release):') }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          # Full history + tags, needed to find the last release tag and scan commits.
+          fetch-depth: 0
+
+      - name: Decide the version bump from commits since the last release
+        id: bump
+        run: |
+          last_tag=$(git describe --tags --abbrev=0 --match 'v*')
+          subjects=$(git log --no-merges --pretty=%s "$last_tag"..HEAD)
+          bodies=$(git log --no-merges --pretty=%B "$last_tag"..HEAD)
+          bump=none
+          if printf '%s\n' "$subjects" | grep -qE '^(fix|perf|refactor)(\([^)]*\))?:'; then bump=patch; fi
+          if printf '%s\n' "$subjects" | grep -qE '^feat(\([^)]*\))?:'; then bump=minor; fi
+          if printf '%s\n' "$subjects" | grep -qE '^[a-z]+(\([^)]*\))?!:' || printf '%s\n' "$bodies" | grep -q 'BREAKING CHANGE'; then bump=major; fi
+          printf 'Commits since %s:\n%s\n\n-> bump: %s\n' "$last_tag" "$subjects" "$bump"
+          echo "bump=$bump" >> "$GITHUB_OUTPUT"
 
       - name: Use Node.js
+        if: steps.bump.outputs.bump != 'none'
         uses: actions/setup-node@v5
         with:
           node-version: 22.x
@@ -22,19 +55,43 @@ jobs:
           cache: npm
 
       - name: Install dependencies
+        if: steps.bump.outputs.bump != 'none'
         run: npm ci
 
       - name: Install Playwright Chromium (for tests)
+        if: steps.bump.outputs.bump != 'none'
         run: npx playwright install --with-deps chromium
 
       - name: Lint
+        if: steps.bump.outputs.bump != 'none'
         run: npm run lint
 
       - name: Test
+        if: steps.bump.outputs.bump != 'none'
         run: npm test
 
+      - name: Bump version and tag
+        if: steps.bump.outputs.bump != 'none'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          npm version "${{ steps.bump.outputs.bump }}" -m "chore(release): v%s"
+
+      # Publish before pushing the tag: if the npm publish fails, nothing lands in the repo
+      # and the next push retries cleanly from the same last tag.
       # `npm publish` builds via the prepublishOnly script and uses publishConfig.access=public.
       - name: Publish to npm
+        if: steps.bump.outputs.bump != 'none'
         run: npm publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Push release commit and tag
+        if: steps.bump.outputs.bump != 'none'
+        run: git push --follow-tags
+
+      - name: Create GitHub release
+        if: steps.bump.outputs.bump != 'none'
+        run: gh release create "v$(node -p "require('./package.json').version")" --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}
