@@ -78,6 +78,37 @@ export interface EditAutomation {
   listProjectMedia(project?: string): Promise<ProjectMedia[]>;
 }
 
+// Scenebuilder (timeline) automation: extend a video with new prompts and/or append
+// existing project clips, then export the combined scene video.
+export interface ExtendSceneInput {
+  id: string;
+  mediaId?: string;
+  scene?: string;
+  prompts: string[];
+  addClips: string[];
+  project?: string;
+  outDir: string;
+  timeout?: number;
+  download: boolean;
+}
+
+export interface ExtendSceneResult {
+  sceneId?: string;
+  totalDuration: string;
+  artifacts: { path: string; metadataPath: string }[];
+  flowUrl: string;
+}
+
+export interface SceneSummary {
+  id: string;
+  name?: string;
+}
+
+export interface SceneAutomation {
+  extendScene(input: ExtendSceneInput): Promise<ExtendSceneResult>;
+  listScenes(project?: string): Promise<SceneSummary[]>;
+}
+
 export interface ToolSummary { name: string; }
 export interface ToolResult { name: string; flowUrl: string; }
 export interface CreateToolInput {

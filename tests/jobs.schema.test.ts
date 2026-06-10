@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parseBatchYaml, parseImageJob, parseVideoJob, parseCharacter, parseTool } from "../src/jobs/schema.js";
 import { parseAgentSettings, parseAgentInstruction, parseAgentRun } from "../src/jobs/schema.js";
+import { parseExtendScene } from "../src/jobs/schema.js";
 
 describe("job schemas", () => {
   it("parses an image job with defaults", () => {
@@ -94,6 +95,35 @@ describe("tool schema", () => {
   });
   it("rejects an unknown preset", () => {
     expect(() => parseTool({ prompt: "x", preset: "nope" })).toThrow();
+  });
+});
+
+describe("extend scene schema", () => {
+  it("parses media-id with ordered prompts and defaults", () => {
+    const spec = parseExtendScene({ mediaId: "abc-123", prompts: ["wave crashes", "sun sets"] });
+    expect(spec.id).toBe("scene");
+    expect(spec.prompts).toEqual(["wave crashes", "sun sets"]);
+    expect(spec.download).toBe(true);
+    expect(spec.out).toBe("./gflow-output");
+  });
+  it("accepts a scene id with add-clips only", () => {
+    const spec = parseExtendScene({ scene: "scene-1", addClips: ["9b14ed49"] });
+    expect(spec.addClips).toEqual(["9b14ed49"]);
+  });
+  it("requires media-id or scene", () => {
+    expect(() => parseExtendScene({ prompts: ["next"] })).toThrow();
+  });
+  it("rejects media-id and scene together", () => {
+    expect(() => parseExtendScene({ mediaId: "a", scene: "b", prompts: ["next"] })).toThrow();
+  });
+  it("rejects more prompts than Flow's 20-extend cap", () => {
+    expect(() => parseExtendScene({ mediaId: "a", prompts: Array.from({ length: 21 }, () => "next") })).toThrow();
+  });
+  it("rejects a run with nothing to do", () => {
+    expect(() => parseExtendScene({ mediaId: "a", download: false })).toThrow();
+  });
+  it("allows a download-only export of an existing scene", () => {
+    expect(parseExtendScene({ scene: "s1" }).download).toBe(true);
   });
 });
 

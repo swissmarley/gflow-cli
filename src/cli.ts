@@ -6,12 +6,13 @@ import { Command, CommanderError, InvalidArgumentError } from "commander";
 import { BROWSER_CHANNELS, DEFAULT_BROWSER_CHANNEL, launchLoginChrome, openBrowserSession, type BrowserChannel } from "./browser/session.js";
 import { exitCodeForError, messageForError } from "./errors.js";
 import { FlowPage, FLOW_URL } from "./flow/page.js";
-import type { AgentAutomation, CharacterAutomation, EditAutomation, FlowAutomation, ToolAutomation } from "./flow/types.js";
+import type { AgentAutomation, CharacterAutomation, EditAutomation, FlowAutomation, SceneAutomation, ToolAutomation } from "./flow/types.js";
 import { AgentPage } from "./flow/agent.js";
 import { CharacterPage } from "./flow/characters.js";
 import { EditPage } from "./flow/edit.js";
+import { ScenePage } from "./flow/scene.js";
 import { ToolPage } from "./flow/tools.js";
-import { parseAgentInstruction, parseAgentRun, parseAgentSettings, parseBatchYaml, parseCharacter, parseEditMedia, parseImageJob, parseTool, parseVideoJob } from "./jobs/schema.js";
+import { parseAgentInstruction, parseAgentRun, parseAgentSettings, parseBatchYaml, parseCharacter, parseEditMedia, parseExtendScene, parseImageJob, parseTool, parseVideoJob } from "./jobs/schema.js";
 import { runJobs } from "./jobs/runner.js";
 import { resolveOutputDir } from "./config/paths.js";
 
@@ -21,6 +22,11 @@ export interface CreateProgramOptions {
   toolAutomation?: ToolAutomation;
   agentAutomation?: AgentAutomation;
   editAutomation?: EditAutomation;
+  sceneAutomation?: SceneAutomation;
+}
+
+function collectOption(value: string, previous: string[]): string[] {
+  return [...previous, value];
 }
 
 function parseIntegerOption(value: string): number {
@@ -118,6 +124,12 @@ async function realAgentAutomation(profile: string, headed: boolean, browser: Br
   const session = await openBrowserSession({ profile, headed, browser });
   await session.page.goto(FLOW_URL, { waitUntil: "domcontentloaded" }).catch(() => undefined);
   return { automation: new AgentPage(session.page), close: () => session.close() };
+}
+
+async function realSceneAutomation(profile: string, headed: boolean, browser: BrowserChannel): Promise<{ automation: SceneAutomation; close(): Promise<void> }> {
+  const session = await openBrowserSession({ profile, headed, browser });
+  await session.page.goto(FLOW_URL, { waitUntil: "domcontentloaded" }).catch(() => undefined);
+  return { automation: new ScenePage(session.page), close: () => session.close() };
 }
 
 async function realEditAutomation(profile: string, headed: boolean, browser: BrowserChannel): Promise<{ automation: EditAutomation; close(): Promise<void> }> {
@@ -545,6 +557,57 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
         await owned.close();
       }
     });
+
+  withSessionOptions(
+    program
+      .command("extend")
+      .description("Extend a video into a longer scene: each --prompt adds ~7s (max 148s total), --add-clip appends existing project videos.")
+  )
+    .option("--media-id <id>", "video to start a NEW scene from (see `gflow media list`)")
+    .option("--scene <id>", "existing scene to continue (see `gflow scene list`)")
+    .option("--prompt <text>", "what happens next; repeat the flag to chain multiple extends in order", collectOption, [])
+    .option("--add-clip <ref>", "project video to append, by media id or visible name; repeatable", collectOption, [])
+    .option("--id <id>", "job id for output files", "scene")
+    .option("--no-download", "skip downloading the combined scene video")
+    .option("--timeout <seconds>", "timeout per extend step", parseIntegerOption)
+    .option("--out <path>", "output directory", "./gflow-output")
+    .action(async (command) => {
+      const spec = parseExtendScene({
+        id: command.id,
+        mediaId: command.mediaId,
+        scene: command.scene,
+        prompts: command.prompt,
+        addClips: command.addClip,
+        project: command.project,
+        out: command.out,
+        timeout: command.timeout,
+        download: command.download
+      });
+      const owned = options.sceneAutomation
+        ? { automation: options.sceneAutomation, close: async () => undefined }
+        : await realSceneAutomation(command.profile, command.headed, command.browser);
+      try {
+        const result = await owned.automation.extendScene({ ...spec, outDir: resolveOutputDir(spec.out) });
+        if (result.sceneId) console.log(`scene ${result.sceneId} (${result.totalDuration}) — continue it with --scene ${result.sceneId}`);
+        for (const artifact of result.artifacts) console.log(`saved ${artifact.path}`);
+      } finally {
+        await owned.close();
+      }
+    });
+
+  const scene = program.command("scene").description("Inspect scenebuilder scenes.");
+  withSessionOptions(scene.command("list").description("List the project's scenes with their ids.")).action(async (command) => {
+    const owned = options.sceneAutomation
+      ? { automation: options.sceneAutomation, close: async () => undefined }
+      : await realSceneAutomation(command.profile, command.headed, command.browser);
+    try {
+      const scenes = await owned.automation.listScenes(command.project);
+      for (const item of scenes) console.log(item.name ? `${item.id} ${item.name}` : item.id);
+      if (scenes.length === 0) console.log("No scenes found in the project.");
+    } finally {
+      await owned.close();
+    }
+  });
 
   const media = program.command("media").description("Inspect project media assets.");
   withSessionOptions(media.command("list").description("List all images and videos in the project with their unique IDs.")).action(async (command) => {
