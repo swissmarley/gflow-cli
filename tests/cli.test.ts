@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import type { AgentAutomation, CharacterAutomation, FlowAutomation, ToolAutomation } from "../src/flow/types.js";
+import type { AgentAutomation, CharacterAutomation, FlowAutomation, SceneAutomation, ToolAutomation } from "../src/flow/types.js";
 import { createProgram, runCli } from "../src/cli.js";
 
 describe("CLI", () => {
@@ -314,6 +314,101 @@ describe("CLI", () => {
     ]);
 
     expect(agentAutomation.listInstructions).toHaveBeenCalledWith("Jun 05, 02:36 AM");
+  });
+
+  it("collects repeated --prompt and --add-clip flags in order for extend", async () => {
+    const sceneAutomation: SceneAutomation = {
+      extendScene: vi.fn(async () => ({
+        sceneId: "818777c1",
+        totalDuration: "00:24:00",
+        artifacts: [],
+        flowUrl: "https://labs.google/fx/tools/flow/project/p/scene/818777c1"
+      })),
+      listScenes: vi.fn(async () => [])
+    };
+    const program = createProgram({ sceneAutomation });
+
+    await program.parseAsync([
+      "node",
+      "gflow",
+      "extend",
+      "--media-id",
+      "9b14ed49",
+      "--prompt",
+      "the wave crashes",
+      "--prompt",
+      "the sun sets",
+      "--add-clip",
+      "Hummingbird"
+    ]);
+
+    expect(sceneAutomation.extendScene).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mediaId: "9b14ed49",
+        prompts: ["the wave crashes", "the sun sets"],
+        addClips: ["Hummingbird"],
+        download: true,
+        outDir: expect.stringContaining("gflow-output")
+      })
+    );
+  });
+
+  it("supports continuing a scene with --scene and --no-download", async () => {
+    const sceneAutomation: SceneAutomation = {
+      extendScene: vi.fn(async () => ({
+        sceneId: "818777c1",
+        totalDuration: "00:32:00",
+        artifacts: [],
+        flowUrl: "https://labs.google/fx/tools/flow/project/p/scene/818777c1"
+      })),
+      listScenes: vi.fn(async () => [])
+    };
+    const program = createProgram({ sceneAutomation });
+
+    await program.parseAsync([
+      "node",
+      "gflow",
+      "extend",
+      "--scene",
+      "818777c1",
+      "--prompt",
+      "a boat appears on the horizon",
+      "--no-download"
+    ]);
+
+    expect(sceneAutomation.extendScene).toHaveBeenCalledWith(
+      expect.objectContaining({
+        scene: "818777c1",
+        prompts: ["a boat appears on the horizon"],
+        download: false
+      })
+    );
+  });
+
+  it("rejects extend without --media-id or --scene", async () => {
+    const sceneAutomation: SceneAutomation = {
+      extendScene: vi.fn(),
+      listScenes: vi.fn(async () => [])
+    };
+    const program = createProgram({ sceneAutomation });
+    program.exitOverride();
+
+    await expect(
+      program.parseAsync(["node", "gflow", "extend", "--prompt", "next scene"])
+    ).rejects.toThrow();
+    expect(sceneAutomation.extendScene).not.toHaveBeenCalled();
+  });
+
+  it("lists scenes through the scene automation", async () => {
+    const sceneAutomation: SceneAutomation = {
+      extendScene: vi.fn(),
+      listScenes: vi.fn(async () => [{ id: "818777c1", name: "Untitled Scene 06-09" }])
+    };
+    const program = createProgram({ sceneAutomation });
+
+    await program.parseAsync(["node", "gflow", "scene", "list", "--project", "Jun 05, 02:36 AM"]);
+
+    expect(sceneAutomation.listScenes).toHaveBeenCalledWith("Jun 05, 02:36 AM");
   });
 
   it("passes --upscale and --character to the image job", async () => {

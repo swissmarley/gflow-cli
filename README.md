@@ -30,6 +30,7 @@ browser session — no private APIs, no login bypass.
 - 🎛️ **Full control** — model, aspect ratio, duration, output count
 - 📦 **Batch pipelines** — run many jobs from a YAML file
 - ⬆️ **Full-quality downloads** — pulls Flow's native asset via the in-app Download menu; add `--upscale 2k` or `--upscale 4k` for upscaled tiers
+- 🎬➕ **Scene extend** — chain prompts to grow a video ~7s at a time (up to 148s) and append other clips, building long videos with a real story
 - 🧑‍🎨 **Characters** — create and reuse saved character references across generations
 - 🛠️ **Tools** — build and open custom Flow tools (image-filter, style-morph, etc.)
 - 🤖 **Agent** — drive the Flow Agent with a prompt, configure its defaults, and manage persistent instructions
@@ -323,6 +324,59 @@ Remove all agent instructions.
 
 ```bash
 gflow agent instruction clear
+```
+
+### `gflow extend`
+
+Turn a generated video into a longer scene with Flow's scenebuilder. Every `--prompt`
+describes what happens next and adds roughly 7–8 seconds (Flow caps a scene at 148
+seconds, about 20 extends); every `--add-clip` appends an existing project video to the
+timeline. When all steps finish, the combined scene video is downloaded at full quality.
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `--media-id <id>` | — | Video to start a **new** scene from (find ids with `gflow media list`) |
+| `--scene <id>` | — | Existing scene to **continue** (find ids with `gflow scene list`) |
+| `--prompt <text>` | — | What happens next; repeat the flag to chain extends in order |
+| `--add-clip <ref>` | — | Project video to append, by media id or visible name; repeatable |
+| `--id <id>` | `scene` | Job id used in output filenames |
+| `--no-download` | — | Skip downloading the combined scene video |
+| `--timeout <seconds>` | `600` | Timeout per extend step |
+| `--out <path>` | `./gflow-output` | Output directory |
+
+Also accepts: `--project`, `--profile`, `--browser`, `--headed`/`--no-headed`.
+
+Exactly one of `--media-id` or `--scene` is required. The first run prints the scene id —
+pass it back with `--scene` to keep extending the same timeline in later runs (re-using
+`--media-id` would start a fresh scene from the original clip).
+
+```bash
+# find the video to extend
+gflow media list
+
+# build a story: base clip + two extends, then download the whole scene
+gflow extend --media-id 9b14ed49-5534-4b2e-bcf6-345b539dddd3 \
+  --prompt "the camera pulls back to reveal the whole garden in golden light" \
+  --prompt "a hummingbird lands on the gardener's hand" \
+  --id garden-story
+
+# continue the same scene later, append another generated clip, works headless too
+gflow extend --scene 818777c1-1be5-4030-9425-b54b6d9ddbd6 \
+  --prompt "night falls and fireflies light up the garden" \
+  --add-clip "Ocean wave rolling onto beach" \
+  --no-headed
+
+# just export an existing scene without changing it
+gflow extend --scene 818777c1-1be5-4030-9425-b54b6d9ddbd6
+```
+
+### `gflow scene list`
+
+Print the project's scenebuilder scenes with their ids.
+
+```bash
+gflow scene list
+gflow scene list --project "Jun 05, 02:36 AM"
 ```
 
 ## Output

@@ -5,13 +5,13 @@ import { artifactBasename, writeArtifactMetadata } from "../output/artifacts.js"
 import { downloadResult } from "./download.js";
 import { flowLocators } from "./locators.js";
 import type { EditAutomation, EditMediaInput, EditMediaResult, ProjectMedia } from "./types.js";
-import { addFromProject, navigateToProject, projectSubUrl, uploadMedia } from "./ui.js";
+import { addFromProject, projectSubUrl, resolveExistingProject, uploadMedia } from "./ui.js";
 
 export class EditPage implements EditAutomation {
   constructor(private readonly page: Page) {}
 
   async listProjectMedia(project?: string): Promise<ProjectMedia[]> {
-    const projectId = await navigateToProject(this.page, project);
+    const projectId = await resolveExistingProject(this.page, project);
     await this.page.goto(projectSubUrl(projectId, ""), { waitUntil: "domcontentloaded" });
     await this.page.waitForTimeout(1000);
 
@@ -48,7 +48,7 @@ export class EditPage implements EditAutomation {
   }
 
   async editMedia(input: EditMediaInput): Promise<EditMediaResult> {
-    const projectId = await navigateToProject(this.page, input.project);
+    const projectId = await resolveExistingProject(this.page, input.project);
     await this.page.goto(projectSubUrl(projectId, ""), { waitUntil: "domcontentloaded" });
     await this.page.waitForTimeout(1000);
 

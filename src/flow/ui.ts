@@ -137,6 +137,24 @@ export async function navigateToProject(page: Page, projectName?: string): Promi
   return id;
 }
 
+// Like navigateToProject, but for commands that inspect or modify EXISTING content
+// (media list, edit, scenes, extend): never create a project — a brand-new empty project
+// cannot contain what the user asked for. With no name and no open project, fall back to
+// the most recent project card on the dashboard.
+export async function resolveExistingProject(page: Page, projectName?: string): Promise<string> {
+  if (projectName) return navigateToProject(page, projectName);
+  const current = projectIdFromUrl(page.url());
+  if (current) return current;
+
+  await page.goto(FLOW_BASE, { waitUntil: "domcontentloaded" });
+  const firstCard = page.locator('a[href*="/project/"]').first();
+  await firstCard.waitFor({ state: "visible", timeout: 15000 }).catch(() => undefined);
+  const href = await firstCard.getAttribute("href").catch(() => null);
+  const id = href ? projectIdFromUrl(href) : undefined;
+  if (!id) throw new Error("No Flow project found. Pass --project or create one in Flow first.");
+  return id;
+}
+
 // Pick an option inside the block whose heading matches `sectionLabel` (Agent Settings
 // renders identical Image/Video blocks, so global text matching is ambiguous).
 export async function pickOptionInSection(page: Page, sectionLabel: RegExp, pattern: RegExp): Promise<boolean> {

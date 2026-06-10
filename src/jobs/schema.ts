@@ -130,6 +130,38 @@ export function parseCharacter(value: unknown): CharacterSpec {
   return characterSchema.parse(value);
 }
 
+// Flow's scenebuilder extends in ~7-8s hops, at most 20 of them, up to a 148s scene
+// (Veo extend limit), so more prompts than that can never succeed in one run.
+export const MAX_SCENE_EXTENDS = 20;
+
+export const extendSceneSchema = z
+  .object({
+    id: z.string().min(1).regex(/^[a-zA-Z0-9._-]+$/).default("scene"),
+    mediaId: z.string().min(1).optional(),
+    scene: z.string().min(1).optional(),
+    prompts: z.array(z.string().min(1)).max(MAX_SCENE_EXTENDS).default([]),
+    addClips: z.array(z.string().min(1)).default([]),
+    project: z.string().min(1).optional(),
+    out: z.string().min(1).default("./gflow-output"),
+    timeout: z.number().int().min(1).optional(),
+    download: z.boolean().default(true)
+  })
+  .superRefine((value, ctx) => {
+    if (!value.mediaId && !value.scene) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "provide --media-id to start a scene from a video, or --scene to continue an existing scene" });
+    }
+    if (value.mediaId && value.scene) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "--media-id and --scene are mutually exclusive" });
+    }
+    if (value.prompts.length === 0 && value.addClips.length === 0 && !value.download) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "nothing to do: no --prompt, no --add-clip, and download disabled" });
+    }
+  });
+export type ExtendSceneSpec = z.infer<typeof extendSceneSchema>;
+export function parseExtendScene(value: unknown): ExtendSceneSpec {
+  return extendSceneSchema.parse(value);
+}
+
 export const editMediaSchema = z.object({
   mediaId: z.string().min(1),
   prompt: z.string().min(1),
