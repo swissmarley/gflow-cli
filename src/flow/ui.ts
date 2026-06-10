@@ -1,4 +1,16 @@
 import type { Locator, Page } from "playwright";
+import { UiContractError } from "../errors.js";
+
+// Click the element marked with data-gflow-pick. The marking evaluate already proved the
+// element is attached, visible and sized, so when the normal click cannot pass Playwright's
+// actionability wait (rAF-based; throttled to a crawl in minimized/occluded windows even
+// with the anti-throttling launch flags), fall back to a forced — still trusted — click
+// rather than burning the 20s session default and silently giving up.
+async function clickMarked(page: Page): Promise<void> {
+  const marked = page.locator('[data-gflow-pick="1"]').first();
+  await marked.click({ timeout: 4000 }).catch(() => marked.click({ force: true, timeout: 2000 }).catch(() => undefined));
+  await page.evaluate(() => document.querySelector('[data-gflow-pick="1"]')?.removeAttribute("data-gflow-pick"));
+}
 
 // Mark the visible control whose trimmed text matches `pattern`, then real-click it.
 // Flow's controls live in React/Radix portals and ignore synthetic DOM .click(); a
@@ -20,18 +32,58 @@ export async function pickOption(page: Page, pattern: RegExp): Promise<boolean> 
     { source: pattern.source, flags: pattern.flags }
   );
   if (!marked) return false;
-  await page.locator('[data-gflow-pick="1"]').first().click().catch(() => undefined);
-  await page.evaluate(() => document.querySelector('[data-gflow-pick="1"]')?.removeAttribute("data-gflow-pick"));
+  await clickMarked(page);
   await page.waitForTimeout(250);
   return true;
 }
 
 // Open a model dropdown (arrow_drop_down) and pick the option whose name matches
 // `model` with punctuation/spacing stripped, so "nano-banana-pro" matches "Nano Banana Pro".
-export async function pickModel(page: Page, model: string): Promise<void> {
-  if (!(await pickOption(page, /arrow_drop_down/))) return;
-  await page.waitForTimeout(700);
-  await selectModelOption(page, model);
+// Verified: after selecting, the dropdown trigger must show the requested model. A pick can
+// fail silently (the option click swallows errors), and continuing would generate with the
+// previous model and waste credits — so retry once, then fail loudly. `reopen` restores the
+// container holding the dropdown (e.g. the settings popover, which the inter-attempt
+// dismissOpenLayers closes); callers whose dropdown sits directly on the page omit it.
+export async function pickModel(page: Page, model: string, reopen?: () => Promise<void>): Promise<void> {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    if (attempt > 0) {
+      await dismissOpenLayers(page);
+      await reopen?.();
+    }
+    if (!(await pickOption(page, /arrow_drop_down/))) {
+      if (attempt === 0) return; // no model dropdown here (e.g. the fixture) — keep current settings
+      break;
+    }
+    // Wait for the menu's options to mount instead of a fixed pause (the settings popover is
+    // itself role=menu, but only the model menu has menuitem children). Fall through on
+    // timeout so a markup change degrades to the old fixed-wait behavior.
+    await page
+      .locator("[role=menu][data-state=open] [role=menuitem]")
+      .first()
+      .waitFor({ state: "visible", timeout: 3000 })
+      .catch(() => page.waitForTimeout(700));
+    await selectModelOption(page, model);
+    if (await modelTriggerShows(page, model)) return;
+  }
+  // Leave no half-open layers behind: a popover left over the prompt box would silently
+  // poison the next command's applySettings.
+  await dismissOpenLayers(page);
+  throw new UiContractError(`Could not select model "${model}" in Flow. Check the model name against the models Flow currently offers.`);
+}
+
+// True when a visible model-dropdown trigger (the arrow_drop_down button) displays `model`,
+// i.e. the selection actually took effect.
+async function modelTriggerShows(page: Page, model: string): Promise<boolean> {
+  const target = model.toLowerCase().replace(/[^a-z0-9]/g, "");
+  return page.evaluate((t) => {
+    const norm = (s: string | null) => (s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+    return [...document.querySelectorAll("button")]
+      .filter((b) => {
+        const r = b.getBoundingClientRect();
+        return r.width > 0 && r.height > 0 && /arrow_drop_down/.test(b.textContent || "");
+      })
+      .some((b) => norm(b.textContent).includes(t));
+  }, target);
 }
 
 // Choose a model from an ALREADY-OPEN model menu (matches the option whose name equals
@@ -53,8 +105,7 @@ export async function selectModelOption(page: Page, model: string): Promise<void
     return true;
   }, target);
   if (marked) {
-    await page.locator('[data-gflow-pick="1"]').first().click().catch(() => undefined);
-    await page.evaluate(() => document.querySelector('[data-gflow-pick="1"]')?.removeAttribute("data-gflow-pick"));
+    await clickMarked(page);
   } else {
     await page.keyboard.press("Escape").catch(() => undefined);
   }
@@ -183,8 +234,7 @@ export async function pickOptionInSection(page: Page, sectionLabel: RegExp, patt
     { sLabel: sectionLabel.source, sFlags: sectionLabel.flags, pSource: pattern.source, pFlags: pattern.flags }
   );
   if (!marked) return false;
-  await page.locator('[data-gflow-pick="1"]').first().click().catch(() => undefined);
-  await page.evaluate(() => document.querySelector('[data-gflow-pick="1"]')?.removeAttribute("data-gflow-pick"));
+  await clickMarked(page);
   await page.waitForTimeout(250);
   return true;
 }
