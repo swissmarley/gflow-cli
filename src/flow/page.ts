@@ -173,6 +173,9 @@ export class FlowPage implements FlowAutomation {
     const settings = flowLocators(this.page).settingsButton.first();
     if (!(await settings.count())) return;
 
+    // A layer left open by a previous (failed) command would make this click TOGGLE the
+    // popover closed and every pick below silently miss — start from a clean slate.
+    await dismissOpenLayers(this.page);
     await settings.click({ force: true }).catch(() => undefined);
     await this.page.waitForTimeout(700);
 
@@ -190,7 +193,13 @@ export class FlowPage implements FlowAutomation {
     if (job.ratio && RATIO_ICON[job.ratio]) await pickOption(this.page, new RegExp(`^${RATIO_ICON[job.ratio]}`));
     if (job.type === "video" && job.duration) await pickOption(this.page, new RegExp(`^${job.duration}s$`));
     await pickOption(this.page, job.outputs === 1 ? /^1x$/ : new RegExp(`^x${job.outputs}$`));
-    if (job.model) await pickModel(this.page, job.model);
+    if (job.model) {
+      // pickModel's retry dismisses every layer, including this popover — hand it a way back in.
+      await pickModel(this.page, job.model, async () => {
+        await settings.click({ force: true }).catch(() => undefined);
+        await this.page.waitForTimeout(700);
+      });
+    }
 
     // The model dropdown and the settings popover are separate layers; a single Escape can
     // leave one of them open over the prompt box, so close them all.

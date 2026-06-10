@@ -260,6 +260,14 @@ export async function launchDebuggableChrome(profile: string, headed: boolean): 
     // Keep navigator.webdriver false so the session looks like ordinary Chrome, matching the
     // automation fingerprint stripping in buildBrowserLaunchOptions.
     "--disable-blink-features=AutomationControlled",
+    // Chrome throttles (and macOS can fully suspend) requestAnimationFrame in minimized or
+    // occluded windows. Playwright's actionability check waits for two consecutive stable
+    // rAF frames, so without these flags every click in a --no-headed (minimized) run crawls
+    // or times out — observed as "stuck on model selection until the window is clicked".
+    // Playwright's own launcher passes the same trio.
+    "--disable-background-timer-throttling",
+    "--disable-backgrounding-occluded-windows",
+    "--disable-renderer-backgrounding",
     // Headless = same real Chrome over CDP as headed, just hidden off-screen (see above).
     ...hiddenWindowArgs(headed),
     FLOW_URL
